@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arogya AI</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Source Sans 3', sans-serif; background: #F5F0E8; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #B8C9B0; border-radius: 8px; }
+    textarea:focus, input:focus, button:focus { outline: 3px solid #4A7C59; outline-offset: 2px; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .msg-enter { animation: fadeSlideIn 0.28s ease-out forwards; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+    .dot { animation: pulse 1.4s infinite; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sage: { 50: '#F0F5EC', 100: '#D9E8D2', 200: '#B8C9B0', 300: '#8FAF83', 400: '#6B9960', 500: '#4A7C59', 600: '#3A6145', 700: '#2C4C35' },
+            cream: { 50: '#FDFBF5', 100: '#F5F0E8', 200: '#EDE5D0', 300: '#DDD0B8' },
+            warm: { 700: '#3D3228', 800: '#2D2419', 900: '#1F180F' }
+          },
+          fontFamily: {
+            serif: ['Lora', 'Georgia', 'serif'],
+            sans: ['Source Sans 3', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+/* ─────────────────────────────────────────────
+   SIDEBAR
+   ───────────────────────────────────────────── */
+const Sidebar = ({ isOpen, onClose }) => {
+  const pastChats = [
+    { id: 1, title: "Diabetes & diet questions", date: "Today" },
+    { id: 2, title: "Blood pressure readings", date: "Yesterday" },
+    { id: 3, title: "Knee pain remedies", date: "Mar 12" },
+    { id: 4, title: "Sleep trouble advice", date: "Mar 10" },
+    { id: 5, title: "Vitamin D supplements", date: "Mar 8" },
+  ];
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-warm-900 bg-opacity-40 z-20 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside className={`
+        fixed top-0 left-0 h-full z-30 lg:static lg:z-auto
+        w-72 flex flex-col
+        bg-sage-700 text-cream-50
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        {/* Logo area */}
+        <div className="px-6 py-6 border-b border-sage-600">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-sage-500 flex items-center justify-center">
+                <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-cream-50">
+                  <path d="M12 2C8.5 2 6 4.5 6 7.5c0 2.5 1.5 4.6 3.8 5.5L12 22l2.2-9C16.5 12.1 18 10 18 7.5 18 4.5 15.5 2 12 2z" fill="currentColor" opacity="0.9"/>
+                  <path d="M9 8h6M12 5v6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <span className="font-serif text-xl font-semibold tracking-wide text-cream-50">Arogya AI</span>
+            </div>
+            <button onClick={onClose} className="lg:hidden text-sage-200 hover:text-cream-50 p-1 rounded" aria-label="Close menu">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <button className="mt-5 w-full flex items-center gap-2 bg-sage-500 hover:bg-sage-400 transition-colors text-cream-50 rounded-xl px-4 py-3 text-base font-medium">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Conversation
+          </button>
+        </div>
+
+        {/* Chat history */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <p className="text-sage-300 text-sm font-medium uppercase tracking-widest px-2 mb-3">Recent Chats</p>
+          <nav className="space-y-1">
+            {pastChats.map((chat, i) => (
+              <button
+                key={chat.id}
+                className={`w-full text-left px-3 py-3 rounded-xl hover:bg-sage-600 transition-colors group ${i === 0 ? 'bg-sage-600' : ''}`}
+              >
+                <p className="text-cream-100 text-base font-medium leading-snug line-clamp-1">{chat.title}</p>
+                <p className="text-sage-300 text-sm mt-0.5">{chat.date}</p>
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-5 border-t border-sage-600">
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-sage-600 transition-colors cursor-pointer">
+            <div className="w-9 h-9 rounded-full bg-sage-400 flex items-center justify-center text-cream-50 font-serif font-semibold text-sm">R</div>
+            <div>
+              <p className="text-cream-100 text-base font-medium leading-tight">Ramesh Sharma</p>
+              <p className="text-sage-300 text-sm">My Account</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   HEADER
+   ───────────────────────────────────────────── */
+const Header = ({ onMenuToggle }) => (
+  <header className="bg-cream-50 border-b border-cream-300 px-5 py-4 flex items-center gap-4 shadow-sm">
+    <button
+      onClick={onMenuToggle}
+      className="lg:hidden p-2 rounded-lg text-warm-700 hover:bg-cream-200 transition-colors"
+      aria-label="Open menu"
+    >
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+
+    <div className="flex-1">
+      <h1 className="font-serif text-xl text-warm-800 font-semibold leading-none">Health Assistant</h1>
+      <p className="text-sage-500 text-sm mt-0.5 font-medium">Always here to help · Not a substitute for your doctor</p>
+    </div>
+
+    <div className="flex items-center gap-2 bg-sage-50 border border-sage-200 rounded-full px-3 py-1.5">
+      <span className="w-2 h-2 rounded-full bg-sage-400 inline-block"></span>
+      <span className="text-sage-600 text-sm font-medium">Online</span>
+    </div>
+  </header>
+);
+
+/* ─────────────────────────────────────────────
+   MESSAGE BUBBLE
+   ───────────────────────────────────────────── */
+const MessageBubble = ({ message }) => {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`flex items-end gap-3 msg-enter ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Avatar */}
+      {!isUser && (
+        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-sage-500 flex items-center justify-center shadow-sm">
+          <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M12 3C9 3 7 5 7 7.5c0 2 1.2 3.7 3 4.4L12 20l2-8.1c1.8-.7 3-2.4 3-4.4C17 5 15 3 12 3z" fill="white" opacity="0.9"/>
+          </svg>
+        </div>
+      )}
+
+      {/* Bubble */}
+      <div className={`max-w-[75%] sm:max-w-[68%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+        {!isUser && (
+          <span className="text-sm text-sage-600 font-medium px-1">Arogya AI</span>
+        )}
+        <div className={`
+          px-5 py-4 rounded-2xl text-[17px] leading-relaxed shadow-sm
+          ${isUser
+            ? 'bg-sage-500 text-white rounded-br-sm'
+            : 'bg-white text-warm-800 rounded-bl-sm border border-cream-300'
+          }
+        `}>
+          {message.content}
+        </div>
+        <span className="text-xs text-warm-700 opacity-50 px-1">
+          {message.time}
+        </span>
+      </div>
+
+      {/* User avatar */}
+      {isUser && (
+        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-sage-700 flex items-center justify-center shadow-sm text-cream-50 font-serif font-semibold">
+          R
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   TYPING INDICATOR
+   ───────────────────────────────────────────── */
+const TypingIndicator = () => (
+  <div className="flex items-end gap-3 msg-enter">
+    <div className="w-10 h-10 rounded-full bg-sage-500 flex items-center justify-center shadow-sm flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+        <path d="M12 3C9 3 7 5 7 7.5c0 2 1.2 3.7 3 4.4L12 20l2-8.1c1.8-.7 3-2.4 3-4.4C17 5 15 3 12 3z" fill="white" opacity="0.9"/>
+      </svg>
+    </div>
+    <div className="bg-white border border-cream-300 rounded-2xl rounded-bl-sm px-5 py-4 flex items-center gap-2 shadow-sm">
+      <span className="dot w-2.5 h-2.5 rounded-full bg-sage-400 inline-block"></span>
+      <span className="dot w-2.5 h-2.5 rounded-full bg-sage-400 inline-block"></span>
+      <span className="dot w-2.5 h-2.5 rounded-full bg-sage-400 inline-block"></span>
+    </div>
+  </div>
+);
+
+/* ─────────────────────────────────────────────
+   CHAT WINDOW
+   ───────────────────────────────────────────── */
+const ChatWindow = ({ messages, isTyping }) => {
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
+
+  const isEmpty = messages.length === 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
+      {isEmpty ? (
+        <div className="flex flex-col items-center justify-center h-full text-center px-4 py-16">
+          <div className="w-20 h-20 rounded-full bg-sage-100 flex items-center justify-center mb-6 shadow-inner">
+            <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10">
+              <path d="M12 2C8.5 2 6 4.5 6 7.5c0 2.5 1.5 4.6 3.8 5.5L12 22l2.2-9C16.5 12.1 18 10 18 7.5 18 4.5 15.5 2 12 2z" fill="#4A7C59" opacity="0.8"/>
+              <path d="M9 8h6M12 5v6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <h2 className="font-serif text-2xl text-warm-800 font-semibold mb-2">Namaste! I'm Arogya AI</h2>
+          <p className="text-warm-700 text-lg leading-relaxed max-w-sm opacity-75">
+            I'm here to help you with health questions. Ask me anything — in simple language, anytime.
+          </p>
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-md">
+            {[
+              "What foods are good for diabetes?",
+              "How can I improve my sleep?",
+              "My knee hurts when I walk. Why?",
+              "Should I take Vitamin D supplements?"
+            ].map((q) => (
+              <button
+                key={q}
+                className="text-left px-4 py-3 rounded-xl bg-white border border-cream-300 text-warm-700 text-base hover:bg-sage-50 hover:border-sage-300 transition-colors shadow-sm"
+                onClick={() => {}}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} message={msg} />
+          ))}
+          {isTyping && <TypingIndicator />}
+        </>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   CHAT INPUT
+   ───────────────────────────────────────────── */
+const ChatInput = ({ onSend, disabled }) => {
+  const [value, setValue] = useState('');
+  const textareaRef = useRef(null);
+
+  const handleSend = () => {
+    const trimmed = value.trim();
+    if (!trimmed || disabled) return;
+    onSend(trimmed);
+    setValue('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleChange = (e) => {
+    setValue(e.target.value);
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+    }
+  };
+
+  return (
+    <div className="bg-cream-50 border-t border-cream-300 px-4 py-4 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-end gap-3 bg-white border-2 border-cream-300 focus-within:border-sage-400 rounded-2xl px-4 py-3 transition-colors shadow-sm">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask your health question here…"
+            rows={1}
+            disabled={disabled}
+            className="flex-1 resize-none bg-transparent text-[17px] text-warm-800 placeholder-warm-700 placeholder-opacity-40 leading-relaxed focus:outline-none min-h-[28px] max-h-40 disabled:opacity-50"
+            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+            aria-label="Type your health question"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!value.trim() || disabled}
+            className="flex-shrink-0 w-11 h-11 rounded-xl bg-sage-500 hover:bg-sage-600 disabled:bg-sage-200 disabled:cursor-not-allowed transition-colors flex items-center justify-center shadow-sm"
+            aria-label="Send message"
+          >
+            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.5 3.5l17 8.5-17 8.5L6 12zm0 0h7" />
+            </svg>
+          </button>
+        </div>
+        <p className="text-center text-sm text-warm-700 opacity-40 mt-2">
+          Press Enter to send · Shift + Enter for new line · This is not medical advice
+        </p>
+      </div>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   MOCK AI RESPONSES
+   ───────────────────────────────────────────── */
+const AI_RESPONSES = [
+  "That's a great question! Based on what you've shared, I'd suggest speaking with your doctor before making any changes. In general, staying hydrated, eating balanced meals, and getting regular gentle exercise can support your overall health.",
+  "I understand your concern. Many people experience this, especially as we get older. Some common reasons include changes in diet, sleep patterns, or activity levels. If this continues for more than a few days, please consult your doctor.",
+  "Thank you for sharing that with me. It's important to monitor these symptoms carefully. I recommend keeping a small diary of when it happens and showing it to your doctor at your next visit. Would you like tips on what to note down?",
+  "That sounds manageable! Here are a few gentle suggestions: \n\n1. Try to maintain a consistent sleep schedule \n2. Reduce tea and coffee after 3pm \n3. Take a short walk after dinner \n\nWould you like more details on any of these?",
+  "I'm glad you asked! This is a common concern among many people. The good news is that small, consistent changes in daily habits can make a big difference over time. Let's work through this step by step."
+];
+
+const getTime = () => new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+/* ─────────────────────────────────────────────
+   APP ROOT
+   ───────────────────────────────────────────── */
+const App = () => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const responseIdx = useRef(0);
+
+  const handleSend = (text) => {
+    const userMsg = { id: Date.now(), role: 'user', content: text, time: getTime() };
+    setMessages(prev => [...prev, userMsg]);
+    setIsTyping(true);
+
+    const delay = 1200 + Math.random() * 800;
+    setTimeout(() => {
+      const aiMsg = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: AI_RESPONSES[responseIdx.current % AI_RESPONSES.length],
+        time: getTime()
+      };
+      responseIdx.current++;
+      setMessages(prev => [...prev, aiMsg]);
+      setIsTyping(false);
+    }, delay);
+  };
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-cream-100">
+      {/* Sidebar */}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Main area */}
+      <div className="flex flex-col flex-1 min-w-0 bg-cream-100">
+        <Header onMenuToggle={() => setSidebarOpen(true)} />
+        <ChatWindow messages={messages} isTyping={isTyping} />
+        <ChatInput onSend={handleSend} disabled={isTyping} />
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
