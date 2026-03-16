@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-3-5-haiku-20241022"
 
+    # Gemini
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # ── LLM generation parameters ─────────────────────────────────
     LLM_MAX_TOKENS: int = 512
     LLM_TEMPERATURE: float = 0.4   # lower = safer / more consistent answers

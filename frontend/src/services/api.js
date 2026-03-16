@@ -31,10 +31,12 @@ function getMockResponse() {
 // Real API call
 // ------------------------------------------------------------------
 async function callAPI(messages) {
-  const response = await fetch(`${BASE_URL}/api/chat`, {
+  const response = await fetch(`${BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ 
+      message: messages[messages.length - 1].content, // Send only the latest user message 
+    }),
   });
 
   if (!response.ok) {

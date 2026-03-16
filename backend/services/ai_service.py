@@ -121,7 +121,7 @@ class AIService:
 
     async def _call_llm(self, prompt: BuiltPrompt) -> LLMRawResponse:
         """Route to the correct LLM provider based on settings."""
-        provider: Literal["openai", "anthropic", "mock"] = (
+        provider: Literal["openai", "anthropic", "gemini", "mock"] = (
             self.settings.LLM_PROVIDER.lower()
         )
 
@@ -129,10 +129,12 @@ class AIService:
             return await self._call_openai(prompt)
         elif provider == "anthropic":
             return await self._call_anthropic(prompt)
+        elif provider == "gemini":
+            return await self._call_gemini(prompt)
         elif provider == "mock":
             return self._call_mock(prompt)
         else:
-            raise ValueError(f"Unknown LLM_PROVIDER: '{provider}'. Expected openai | anthropic | mock.")
+            raise ValueError(f"Unknown LLM_PROVIDER: '{provider}'. Expected openai | anthropic | gemini | mock.")
 
     # ── OpenAI ────────────────────────────────────────────────────
 
@@ -196,6 +198,41 @@ class AIService:
                 break
 
         return LLMRawResponse(raw_text=text.strip(), model_used=self.settings.ANTHROPIC_MODEL)
+
+    # ── Gemini ─────────────────────────────────────────────────
+    async def _call_gemini(self, prompt: BuiltPrompt) -> LLMRawResponse:
+        """
+        Call Google Gemini API
+        Requires: pip install google-genai
+        """
+
+        try:
+            from google import genai
+        except ImportError:
+            raise RuntimeError(
+                "google-genai not installed. Run: pip install google-genai"
+            )
+
+        client = genai.Client(api_key=self.settings.GEMINI_API_KEY)
+
+        combined_prompt = f"""
+    {prompt.system_prompt}
+
+    User message:
+    {prompt.user_prompt}
+    """
+
+        response = client.models.generate_content(
+            model=self.settings.GEMINI_MODEL,
+            contents=combined_prompt
+        )
+
+        text = response.text or ""
+
+        return LLMRawResponse(
+            raw_text=text.strip(),
+            model_used=self.settings.GEMINI_MODEL
+        )
 
     # ── Mock ──────────────────────────────────────────────────────
 
