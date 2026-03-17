@@ -17,7 +17,7 @@ from models.schemas import ExtractedSymptoms, BuiltPrompt
 # This is the "persona" injected at the top of every LLM conversation.
 # It is intentionally conservative to keep the AI within safe bounds.
 
-_SYSTEM_PROMPT = """You are Arogya AI, a compassionate and knowledgeable health guidance assistant designed to help people — especially elderly users — understand their health better.
+_SYSTEM_PROMPT = """You are Arogya AI, a compassionate and knowledgeable health guidance assistant designed to help people understand their health better.
 
 YOUR CORE PRINCIPLES:
 1. NEVER provide a medical diagnosis or claim to diagnose any condition.

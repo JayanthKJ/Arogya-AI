@@ -53,8 +53,8 @@ KNOWN_SYMPTOMS: list[str] = [
 # ── Duration patterns ─────────────────────────────────────────────────────────
 # Matches expressions like "3 days", "two weeks", "since yesterday", "for a month"
 _DURATION_PATTERNS: list[str] = [
-    r"\bfor\s+(?:the\s+)?(?:past\s+)?(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years))\b",
-    r"\b(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years))\b",
+    r"\bfor\s+(?:the\s+)?(?:past\s+)?(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years|min|mins|minute|minutes))\b",
+    r"\b(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years|min|mins|minute|minutes))\b",
     r"\b(since\s+(?:yesterday|last\s+\w+|this\s+\w+|\w+\s+days?\s+ago))\b",
     r"\b(since\s+\d+\s+(?:day|days|week|weeks|month|months))\b",
     r"\b(from\s+(?:yesterday|last\s+\w+))\b",
