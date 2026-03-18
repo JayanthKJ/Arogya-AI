@@ -30,12 +30,13 @@ function getMockResponse() {
 // ------------------------------------------------------------------
 // Real API call
 // ------------------------------------------------------------------
-async function callAPI(messages) {
-  const response = await fetch(`${BASE_URL}/chat`, {
+async function callAPI(messages, sessionId) {
+  const response = await fetch(`${BASE_URL}/chat/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
       message: messages[messages.length - 1].content, // Send only the latest user message 
+      session_id: sessionId,
     }),
   });
 
@@ -56,7 +57,7 @@ async function callAPI(messages) {
  * @param {Array<{role: "user"|"assistant", text: string}>} messageHistory
  * @returns {Promise<string>} AI reply text
  */
-export async function sendMessage(messageHistory) {
+export async function sendMessage(messageHistory, sessionId) {
   if (USE_MOCK) {
     // Simulate realistic network latency
     await new Promise((resolve) =>
@@ -70,5 +71,5 @@ export async function sendMessage(messageHistory) {
     content: m.text,
   }));
 
-  return callAPI(formatted);
+  return callAPI(formatted, sessionId); // ← sessionId passed through to callAPI
 }

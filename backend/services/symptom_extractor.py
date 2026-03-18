@@ -22,7 +22,7 @@ from models.schemas import ExtractedSymptoms
 KNOWN_SYMPTOMS: list[str] = [
     # General
     "fever", "chills", "fatigue", "weakness", "tiredness", "malaise",
-    "night sweats", "weight loss", "weight gain",
+    "night sweats", "weight loss", "weight gain", "cold", "chilling",
     # Head / neuro
     "headache", "migraine", "dizziness", "vertigo", "confusion",
     "memory loss", "fainting", "seizure",

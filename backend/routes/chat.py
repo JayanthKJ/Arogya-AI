@@ -1,13 +1,17 @@
 """
-routes/chat.py
---------------
+routes/chat.py  (v2 — passes session_id into AIService.process)
 Defines the /chat router with a single POST endpoint.
-
-Route handler responsibilities (only):
-  - Validate the incoming request  (Pydantic handles this automatically)
-  - Delegate to AIService
-  - Return a typed response
-  - Handle known exceptions with appropriate HTTP status codes
+---------------------------------------------------------------
+CHANGE LOG (v2):
+  - chat() handler: reads session_id from ChatRequest and passes it
+    to ai_service.process(message, session_id)
+  - Everything else (error handling, response shape, health endpoint)
+    is UNCHANGED from v1, which is as follows:
+    Route handler responsibilities (only):
+    - Validate the incoming request  (Pydantic handles this automatically)
+    - Delegate to AIService
+    - Return a typed response
+    - Handle known exceptions with appropriate HTTP status codes
 
 Business logic lives in services/, not here.
 """
@@ -31,8 +35,11 @@ router = APIRouter(tags=["Chat"])
 # FastAPI calls this once per request; the instance itself is lightweight
 # because the heavy SDK clients are created lazily inside _call_llm().
 
+# After — one AIService for the server's lifetime
+_ai_service = AIService()     # ← constructed once at startup
+
 def get_ai_service() -> AIService:
-    return AIService()
+    return _ai_service        # ← same instance returned every time
 
 
 # ── POST /chat ────────────────────────────────────────────────────────────────
@@ -43,13 +50,14 @@ def get_ai_service() -> AIService:
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        503: {"model": ErrorResponse, "description": "LLM unavailable"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
     summary="Send a message to Arogya AI",
     description=(
-        "Accepts a user's health-related message, extracts symptoms, "
-        "builds a context-aware prompt, calls the configured LLM, "
-        "applies a safety filter, and returns the AI's reply."
+        "Accepts a user message and session_id. Retrieves conversation history "
+        "for the session, builds a context-aware prompt, calls the LLM, applies "
+        "a safety filter, persists the reply, and returns the response."
     ),
 )
 async def chat(
@@ -59,21 +67,27 @@ async def chat(
 ) -> ChatResponse:
     """
     Main chat endpoint.
+    v2 request body:
+        { "message": "I still have that headache", "session_id": "abc123" }
 
-    Request body:
-        { "message": "I have fever and headache for 3 days" }
-
-    Response body:
+    Response body (UNCHANGED from v1):
         {
           "reply": "...",
           "extracted": { "symptoms": [...], "duration": "..." },
           "safe": true
         }
     """
-    logger.info("POST /chat — message length=%d", len(request.message))
+    logger.info(
+        "POST /chat | session=%s | message_length=%d",
+        request.session_id, len(request.message),
+    )
 
     try:
-        result = await ai_service.process(request.message)
+        # ── v2 change: pass session_id alongside the message ──────
+        result = await ai_service.process(
+            user_message=request.message,
+            session_id=request.session_id,   # ← NEW
+        )
         return ChatResponse(**result)
 
     except ValueError as exc:
@@ -81,7 +95,7 @@ async def chat(
         logger.error("Configuration error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail=str(exc)
         )
 
     except RuntimeError as exc:
@@ -101,13 +115,13 @@ async def chat(
         )
 
 
-# ── GET /chat/health ──────────────────────────────────────────────────────────
+# ── GET /chat/health — UNCHANGED ──────────────────────────────────────────────
 # Lightweight liveness check that load-balancers / k8s can poll.
 
 @router.get(
     "/health",
     summary="Chat service health check",
-    include_in_schema=False,
+    include_in_schema=False
 )
 async def chat_health(settings: Settings = Depends(get_settings)):
     return {

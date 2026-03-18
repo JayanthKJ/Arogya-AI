@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { sendMessage } from "../services/api";
 
 /**
@@ -38,6 +38,10 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Generated once when the hook mounts (i.e. once per browser tab / chat open).
+  // useRef keeps it stable across re-renders without triggering re-renders itself.
+  const sessionId = useRef(crypto.randomUUID());
+
   const send = useCallback(
     async (text) => {
       if (!text.trim() || isLoading) return;
@@ -52,7 +56,9 @@ export function useChat() {
       try {
         // Pass the full history (including the new user message) for context
         const historyWithNew = [...messages, userMessage];
-        const reply = await sendMessage(historyWithNew);
+        
+        // Pass sessionId.current — same UUID every call for this tab
+        const reply = await sendMessage(historyWithNew, sessionId.current);
 
         const aiMessage = createMessage("ai", reply);
         setMessages((prev) => [...prev, aiMessage]);
