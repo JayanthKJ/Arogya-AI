@@ -25,27 +25,27 @@ KNOWN_SYMPTOMS: list[str] = [
     "night sweats", "weight loss", "weight gain", "cold", "chilling",
     # Head / neuro
     "headache", "migraine", "dizziness", "vertigo", "confusion",
-    "memory loss", "fainting", "seizure",
+    "memory loss", "fainting", "seizure", "head ache", "head-ache",
     # Eyes / ears / nose / throat
     "blurred vision", "eye pain", "ear pain", "hearing loss",
     "runny nose", "stuffy nose", "nasal congestion", "sneezing",
     "sore throat", "hoarseness", "difficulty swallowing",
     # Respiratory
     "cough", "dry cough", "wet cough", "shortness of breath",
-    "wheezing", "chest tightness", "chest pain",
+    "wheezing", "chest tightness", "chest pain", "difficulty breathing",
     # Cardiac
-    "palpitations", "irregular heartbeat", "rapid heartbeat",
+    "palpitations", "irregular heartbeat", "rapid heartbeat", "heart ache",
     # GI
     "nausea", "vomiting", "diarrhea", "constipation", "bloating",
     "abdominal pain", "stomach pain", "stomach ache", "indigestion",
-    "heartburn", "loss of appetite",
+    "heartburn", "loss of appetite", "gastric",
     # Musculoskeletal
     "joint pain", "muscle pain", "back pain", "neck pain",
     "knee pain", "shoulder pain", "body ache", "stiffness",
     # Skin
     "rash", "itching", "hives", "swelling", "redness", "bruising",
     # Urinary
-    "frequent urination", "painful urination", "blood in urine",
+    "frequent urination", "painful urination", "blood in urine", "colour"
     # Other
     "anxiety", "depression", "insomnia", "sleep problems",
 ]
@@ -53,8 +53,8 @@ KNOWN_SYMPTOMS: list[str] = [
 # ── Duration patterns ─────────────────────────────────────────────────────────
 # Matches expressions like "3 days", "two weeks", "since yesterday", "for a month"
 _DURATION_PATTERNS: list[str] = [
-    r"\bfor\s+(?:the\s+)?(?:past\s+)?(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years|min|mins|minute|minutes))\b",
-    r"\b(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|year|years|min|mins|minute|minutes))\b",
+    r"\bfor\s+(?:the\s+)?(?:past\s+)?(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|hrs|hr|yr|yrs|year|years|min|mins|minute|minutes))\b",
+    r"\b(\d+\s+(?:day|days|week|weeks|month|months|hour|hours|hrs|hr|yr|yrs|year|years|min|mins|minute|minutes))\b",
     r"\b(since\s+(?:yesterday|last\s+\w+|this\s+\w+|\w+\s+days?\s+ago))\b",
     r"\b(since\s+\d+\s+(?:day|days|week|weeks|month|months))\b",
     r"\b(from\s+(?:yesterday|last\s+\w+))\b",
@@ -66,7 +66,7 @@ BODY_PARTS: list[str] = [
     "head", "eye", "eyes", "ear", "ears", "nose", "throat", "neck",
     "chest", "back", "shoulder", "arm", "elbow", "wrist", "hand",
     "stomach", "abdomen", "hip", "leg", "knee", "ankle", "foot",
-    "skin", "liver", "kidney", "heart", "lung", "lungs",
+    "skin", "liver", "kidney", "heart", "lung", "lungs", "palm", "finger", "fingers",
 ]
 
 # ── Severity vocabulary ───────────────────────────────────────────────────────
