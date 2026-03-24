@@ -1,7 +1,8 @@
 """
-services/ai_service.py  (v2 — conversation memory integrated)
-Thin abstraction layer over different LLM providers.
+services/ai_service.py  (v3 — SymptomInterpreter integrated)
 -------------------------------------------------------------
+Thin abstraction layer over different LLM providers.
+
 CHANGE LOG (v2):
   - __init__: imports and stores a MemoryStore instance
   - process(): accepts `session_id`, runs the 7-step v2 pipeline
@@ -28,6 +29,13 @@ The new pipeline (step numbers match requirements doc):
   5. Apply safety filter
   6. Store assistant response in memory
   7. Trim history to last 6 messages
+
+CHANGE LOG (v3):
+  - __init__: added self.interpreter = SymptomInterpreter()
+  - process(): added interpret() call between extraction and prompt building
+  - process(): passes interpreted into build_with_history()
+  - process(): includes interpreted in the returned dict
+  - Everything else unchanged.
 """
 
 import logging
@@ -36,11 +44,12 @@ from typing import Literal
 
 from config.settings import get_settings
 from models.schemas  import BuiltPrompt, LLMRawResponse
+from services.memory_store        import memory_store   # Shared in-memory store (single-process only; replace with DB/Redis in production)
 
 logger = logging.getLogger(__name__)
 
 
-# ── Mock responses (unchanged from v1) ───────────────────────────────────────
+# ── Mock responses (unchanged) ────────────────────────────────────────────────
 
 _MOCK_REPLIES: list[str] = [
     textwrap.dedent("""\
@@ -84,97 +93,114 @@ class AIService:
     """
     Orchestrates the full AI pipeline for a single user message.
 
-    v2 pipeline (process method):
+    v3 pipeline:
         user message + session_id
-          └─► MemoryStore.add(user message)         [step 1]
-          └─► MemoryStore.get(history)              [step 2]
-          └─► PromptBuilder.build_with_history()    [step 3]
-          └─► _call_llm()                           [step 4]
-          └─► SafetyFilter.filter()                 [step 5]
-          └─► MemoryStore.add(assistant reply)      [step 6]
-          └─► MemoryStore.trim()                    [step 7]
+          └─► MemoryStore.add(user message)              [step 1]
+          └─► MemoryStore.get(history)                   [step 2]
+          └─► SymptomExtractor.extract()                 [step 3]
+          └─► SymptomInterpreter.interpret()             [step 4]  <- NEW
+          └─► PromptBuilder.build_with_history()         [step 5]
+          └─► _call_llm()                                [step 6]
+          └─► SafetyFilter.filter()                      [step 7]
+          └─► MemoryStore.add(assistant reply) + trim()  [step 8]
           └─► ChatResponse
     """
 
     def __init__(self) -> None:
-        from services.symptom_extractor import SymptomExtractor
-        from services.prompt_builder    import PromptBuilder
-        from services.safety_filter     import SafetyFilter
-        from services.memory_store      import MemoryStore   # ← NEW in v2
+        from services.symptom_extractor   import SymptomExtractor
+        from services.symptom_interpreter import SymptomInterpreter  # <- NEW
+        from services.prompt_builder      import PromptBuilder
+        from services.safety_filter       import SafetyFilter
 
         self.settings       = get_settings()
         self.extractor      = SymptomExtractor()
+        self.interpreter    = SymptomInterpreter()                   # <- NEW
         self.prompt_builder = PromptBuilder()
         self.safety_filter  = SafetyFilter()
-        self.memory         = MemoryStore()                  # ← NEW in v2
+        self.memory         = memory_store
 
     # ── Public API ────────────────────────────────────────────────
 
-    async def process(self, user_message: str, session_id: str) -> dict:  # ← session_id added
+    async def process(self, user_message: str, session_id: str) -> dict:
         """
-        Full v2 pipeline: message + session → structured response.
+        Full v3 pipeline: message + session_id -> structured response.
 
         Args:
             user_message: Raw text from the user.
             session_id:   Stable identifier for this conversation.
 
         Returns:
-            Dict matching ChatResponse schema.
+             a dict matching ChatResponse schema (plus interpreted context).
         """
         logger.info(
             "Processing message | session=%s | length=%d",
             session_id, len(user_message),
         )
 
-        # ── Step 1: store the incoming user message ───────────────
+        # ── Step 1: store user message ────────────────────────────
         self.memory.add(session_id, role="user", content=user_message)
 
-        # ── Step 2: extract symptoms from current message ─────────
-        # (Extraction still runs on the current message only — the LLM
-        #  will use history for context, not the extractor.)
+        # ── Step 2: retrieve prior history ────────────────────────
+        full_history  = self.memory.get(session_id)
+        prior_history = full_history[:-1]   # exclude the message just added
+        logger.debug("Session %s | prior turns=%d", session_id, len(prior_history))
+
+        # ── Step 3: extract symptoms ──────────────────────────────
         extracted = self.extractor.extract(user_message)
-        logger.debug("Extracted symptoms: %s", extracted)
+        logger.debug("Extracted: %s", extracted)
 
-        # ── Step 3: retrieve history and build prompt ─────────────
-        # get() returns all messages including the one we just added.
-        # We exclude the last message (current user turn) from the
-        # "history" block so it appears under "Current message:" instead.
-        all_messages = self.memory.get(session_id)
-        prior_history = all_messages[:-1]  # everything before the current message
+        # ── Step 4: interpret health context ─────────────────────  <- NEW
+        normalized_history = [
+            {"role": m.role, "content": m.content}
+            for m in prior_history
+        ]
+        try:
+            interpreted = self.interpreter.interpret(
+                user_message,
+                extracted,
+                normalized_history,
+            )
+        except Exception as e:
+            logger.exception("Interpreter failed")
+            interpreted = None
+        logger.debug("Interpreted: %s", interpreted)
 
+        # guard to check if the interpreter failed
+        if not isinstance(interpreted, dict):
+            interpreted = None
+
+        # ── Step 5: build prompt ──────────────────────────────────
         built_prompt: BuiltPrompt = self.prompt_builder.build_with_history(
-            user_message=user_message,
-            extracted=extracted,
-            history=prior_history,
+            user_message,
+            extracted,
+            prior_history,
+            interpreted,   # <- NEW
         )
 
-        # ── DEBUG: print the full joined prompt ──────────────────────
-        # Shows exactly what gets sent to the LLM. Remove in production.
-        # logger.debug("SYSTEM PROMPT:\n%s", built_prompt.system_prompt)
-        # logger.debug("USER PROMPT (history + current message joined):\n%s", built_prompt.user_prompt)
+        logger.debug("SYSTEM PROMPT:\n%s", built_prompt.system_prompt)
+        logger.debug("USER PROMPT:\n%s", built_prompt.user_prompt)
 
-        # ── Step 4: call the LLM ──────────────────────────────────
+        # ── Step 6: call LLM ──────────────────────────────────────
         raw: LLMRawResponse = await self._call_llm(built_prompt)
-        logger.debug("LLM response (%s): %.120s…", raw.model_used, raw.raw_text)
+        logger.debug("LLM response (%s): %.120s...", raw.model_used, raw.raw_text)
 
-        # ── Step 5: apply safety filter ───────────────────────────
+        # ── Step 7: safety filter ─────────────────────────────────
         result = self.safety_filter.filter(raw.raw_text)
         if result.was_modified:
             logger.warning(
-                "Safety filter modified response | session=%s | message=%.80s…",
+                "Safety filter modified response | session=%s | message=%.80s...",
                 session_id, user_message,
             )
 
-        # ── Step 6: store the assistant reply in memory ───────────
+        # ── Step 8: store assistant reply + trim ──────────────────
         self.memory.add(session_id, role="assistant", content=result.reply)
-
-        # ── Step 7: trim history to last 6 messages ───────────────
         self.memory.trim(session_id)
 
         return {
-            "reply":     result.reply,
-            "extracted": extracted,
-            "safe":      not result.was_modified,
+            "reply":       result.reply,
+            "extracted":   extracted,
+            "interpreted": interpreted,   # <- NEW
+            "safe":        not result.was_modified,
         }
 
     # ── LLM dispatch — UNCHANGED from v1 ─────────────────────────
@@ -193,7 +219,7 @@ class AIService:
             return self._call_mock(prompt)
         else:
             raise ValueError(
-                f"Unknown LLM_PROVIDER: '{provider}'. Expected openai | anthropic | mock."
+                f"Unknown LLM_PROVIDER: '{provider}'. Expected openai | anthropic | gemini | mock."
             )
 
     # ── OpenAI ────────────────────────────────────────────────────
@@ -256,32 +282,28 @@ class AIService:
         try:
             from google import genai
         except ImportError:
-            raise RuntimeError(
-                "google-genai not installed. Run: pip install google-genai"
-            )
+            raise RuntimeError("google-genai not installed. Run: pip install google-genai")
 
         client = genai.Client(api_key=self.settings.GEMINI_API_KEY)
 
         combined_prompt = f"""
-    {prompt.system_prompt}
+        SYSTEM:
+        {prompt.system_prompt}
 
-    User message:
-    {prompt.user_prompt}
-    """
+        USER:
+        {prompt.user_prompt}
+
+        INSTRUCTIONS:
+        Follow all system rules strictly.
+        """
 
         response = client.models.generate_content(
             model=self.settings.GEMINI_MODEL,
-            contents=combined_prompt
+            contents=combined_prompt,
         )
 
         text = response.text or ""
-
-        return LLMRawResponse(
-            raw_text=text.strip(),
-            model_used=self.settings.GEMINI_MODEL
-        )
-
-    # ── Mock ──────────────────────────────────────────────────────
+        return LLMRawResponse(raw_text=text.strip(), model_used=self.settings.GEMINI_MODEL)
 
     def _call_mock(self, prompt: BuiltPrompt) -> LLMRawResponse:
         """Unchanged from v1."""

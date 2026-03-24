@@ -110,3 +110,5 @@ class MemoryStore:
     def session_count(self) -> int:
         """Return the number of active sessions (useful for monitoring)."""
         return len(self._store)
+
+memory_store = MemoryStore()
