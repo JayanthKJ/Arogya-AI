@@ -1,5 +1,5 @@
 """
-services/prompt_builder.py  (v3 — interpreted context added)
+services/prompt_builder.py  (v5 — decision guidance added)
 -------------------------------------------------------------
 Builds the system and user prompts that are sent to the LLM.
 
@@ -9,14 +9,24 @@ Responsibilities:
      LLM can give more relevant guidance without needing to re-parse text.
   3. Keep the system prompt short and direct — LLMs follow concise
      instructions more reliably than long paragraphs.
+
 CHANGE LOG (v2):
   - Added `build_with_history(user_message, extracted, history)` method
   - Original `build()` method is UNCHANGED — existing callers are unaffected
-  - Added _format_history() private helper
+
 CHANGE LOG (v3):
   - build_with_history(): added `interpreted` parameter
   - _build_user_prompt_with_history(): added Section 4 — interpreted health context
-  - build() and all other methods: UNCHANGED
+
+CHANGE LOG (v4):
+  - Section 1: added active history analysis instruction
+  - Section 4: strengthened interpreted context authority + consistency instruction
+  - Section 4: added fallback note when interpreted is None
+
+CHANGE LOG (v5):
+  - build_with_history(): added `decision` parameter
+  - _build_user_prompt_with_history(): added Section 5 — decision guidance
+  - All existing sections UNCHANGED
 """
 
 from __future__ import annotations
@@ -30,7 +40,7 @@ if TYPE_CHECKING:
     from services.memory_store import Message
 
 
-# ── System prompt template (unchanged from v1) ─────────────────────────────────────────
+# ── System prompt template (unchanged) ───────────────────────────────────────
 # This is the "persona" injected at the top of every LLM conversation.
 # It is intentionally conservative to keep the AI within safe bounds.
 
@@ -48,7 +58,7 @@ YOUR CORE PRINCIPLES:
 9. Do NOT assume or introduce new symptoms that were not mentioned by the user.
 10. Focus on the emergency contacts based in India if any serious symptoms show up."""
 
-# ── Symptom context block (unchanged from v1) ─────────────────────────────────
+# ── Symptom context block (unchanged) ────────────────────────────────────────
 # Injected into the user prompt when symptoms are detected.
 
 _SYMPTOM_CONTEXT_TEMPLATE = """
@@ -63,7 +73,7 @@ Please use this context to personalise your guidance.
 User's original message:
 """
 
-# ── Emergency symptoms keywords (trigger extra-urgent advice) (unchanged from v1) ────────────────────────────────────
+# ── Emergency symptoms trigger extra-urgent advice) (unchanged from v1) ───────────────────────────────────────────
 
 _EMERGENCY_SYMPTOMS = {
     "chest pain", "chest tightness", "difficulty breathing",
@@ -80,20 +90,22 @@ class PromptBuilder:
 
     Public methods:
       build()              — single-turn (no history), original behaviour.
-      build_with_history() — multi-turn, injects history + interpreted context.
+      build_with_history() — multi-turn, injects history + interpreted + decision.
     """
 
-    # ── v3: multi-turn method ─────────────────────────────────────────────────
+    # ── v5: multi-turn method ─────────────────────────────────────────────────
 
     def build_with_history(
         self,
         user_message: str,
         extracted:    ExtractedSymptoms,
         history:      list[dict],
-        interpreted:  dict | None = None,   # <- NEW, optional for safety
+        interpreted:  dict | None = None,
+        decision:     dict | None = None,   # <- NEW v5
     ) -> BuiltPrompt:
         """
-        Build a prompt with conversation history and interpreted health context.
+        Build a prompt with conversation history, interpreted context,
+        and decision guidance.
 
         Prompt structure:
         ┌─────────────────────────────────────────────────────┐
@@ -101,18 +113,23 @@ class PromptBuilder:
         │                                                     │
         │  Conversation so far:                               │
         │  User: ...  /  Assistant: ...                       │
+        │  [active analysis instruction]                      │
         │                                                     │
         │  Current message:                                   │
         │  User: <current message>                            │
         │                                                     │
         │  [Extracted symptom context — if any]               │
         │                                                     │
-        │  [Interpreted health context — if any]   <- NEW     │
+        │  [Interpreted health context — if any]              │
+        │  [authority + consistency instructions]             │
+        │  OR [fallback note]                                 │
+        │                                                     │
+        │  [Decision guidance]                    <- v5 NEW   │
         └─────────────────────────────────────────────────────┘
         """
         system = self._build_system_prompt(extracted)
         user   = self._build_user_prompt_with_history(
-            user_message, extracted, history, interpreted
+            user_message, extracted, history, interpreted, decision
         )
         return BuiltPrompt(system_prompt=system, user_prompt=user)
 
@@ -121,10 +138,11 @@ class PromptBuilder:
         user_message: str,
         extracted:    ExtractedSymptoms,
         history:      list[dict],
-        interpreted:  dict | None = None,   # <- NEW
+        interpreted:  dict | None = None,
+        decision:     dict | None = None,   # <- NEW v5
     ) -> str:
         """
-        Assemble the full user-facing prompt string across four sections.
+        Assemble the full user-facing prompt string across five sections.
         """
         parts: list[str] = []
 
@@ -147,6 +165,7 @@ class PromptBuilder:
             parts.append("Analyze how the user's condition has evolved across the conversation before responding.")
 
         # ── Section 2: current message ───────────────────────────
+        parts.append("")
         parts.append("Current message:")
         parts.append(f"User: {user_message}")
 
@@ -163,7 +182,7 @@ class PromptBuilder:
             if extracted.severity_hints:
                 parts.append(f"- Severity  : {', '.join(extracted.severity_hints)}")
 
-        # ── Section 4: interpreted health context ─────────────────  <- NEW
+        # ── Section 4: interpreted health context (unchanged) ─────
         if interpreted and isinstance(interpreted, dict):
             parts.append("")
             parts.append("[IMPORTANT: Interpreted health context — use this to understand progression]")
@@ -172,12 +191,13 @@ class PromptBuilder:
             parts.append(f"- Symptoms : {symptoms_str}")
             parts.append(f"- Severity : {interpreted['severity']}")
             parts.append(f"- Trend    : {interpreted['trend']}")
-            parts.append(f"- Duration : {interpreted['duration']}")     # some improvisations are done after this line.
+            parts.append(f"- Duration : {interpreted['duration']}")
             parts.append("")
-            parts.append("Use this interpreted context to understand how the user's condition is evolving over time.")
-            parts.append("Prioritize this over assumptions. Do NOT introduce new symptoms.")        # again some improvisations but in the same version.
+            parts.append("Prioritize this over assumptions. Do NOT introduce new symptoms.")
             parts.append("This interpreted context is the most reliable structured understanding of the user's condition.")
             parts.append("You MUST base your reasoning primarily on this.")
+            parts.append("")
+            parts.append("Ensure your response is consistent with both the conversation history and interpreted context.")
             parts.append("")
             parts.append("[Response Guidelines]")
             parts.append("- Base your response on the interpreted trend and severity.")
@@ -185,6 +205,33 @@ class PromptBuilder:
             parts.append("- If severity is severe, clearly advise seeking medical attention.")
             parts.append("- If symptoms are unclear, ask clarifying questions.")
             parts.append("- Do NOT contradict the interpreted context.")
+
+        else:
+            parts.append("")
+            parts.append("[Note: Interpreted context unavailable — rely on conversation and extracted data.]")
+
+        # ── Section 5: decision guidance ──────────────────────────  <- NEW v5
+        if decision and isinstance(decision, dict):
+            decision_type = decision.get("type", "respond")
+            parts.append("")
+            parts.append("[Decision guidance]")
+
+            if decision_type == "ask":
+                parts.append("The user's condition is unclear.")
+                parts.append("Your task:")
+                parts.append("- Ask 1-2 specific follow-up questions")
+                parts.append("- Do NOT give advice yet")
+                parts.append("- Do NOT assume symptoms")
+
+            elif decision_type == "escalate":
+                parts.append("The situation may be serious.")
+                parts.append("Your task:")
+                parts.append("- Begin with strong urgency")
+                parts.append("- Advise immediate medical attention")
+                parts.append("- Keep tone calm and clear")
+
+            else:   # "respond" — default
+                parts.append("Provide clear, structured guidance based on the interpreted context.")
 
         return "\n".join(parts)
 

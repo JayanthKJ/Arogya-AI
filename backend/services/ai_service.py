@@ -1,41 +1,27 @@
 """
-services/ai_service.py  (v3 — SymptomInterpreter integrated)
+services/ai_service.py  (v5 — decision layer added)
 -------------------------------------------------------------
 Thin abstraction layer over different LLM providers.
 
 CHANGE LOG (v2):
   - __init__: imports and stores a MemoryStore instance
   - process(): accepts `session_id`, runs the 7-step v2 pipeline
-  - _call_llm(): UNCHANGED
-  - _call_openai(): UNCHANGED
-  - _call_anthropic(): UNCHANGED
-  - _call_mock(): UNCHANGED
-
-Supported providers (controlled by LLM_PROVIDER in .env):
-  "openai"     — OpenAI Chat Completions API
-  "anthropic"  — Anthropic Messages API
-  "mock"       — Deterministic mock replies (development / CI)
-
-Adding a new provider means:
-  1. Add a new `elif` branch in _call_llm()
-  2. Add its SDK to requirements.txt
-  Nothing else changes.
-
-The new pipeline (step numbers match requirements doc):
-  1. Store user message in memory
-  2. Retrieve conversation history for session_id
-  3. Pass history into prompt builder (build_with_history)
-  4. Call LLM
-  5. Apply safety filter
-  6. Store assistant response in memory
-  7. Trim history to last 6 messages
 
 CHANGE LOG (v3):
   - __init__: added self.interpreter = SymptomInterpreter()
   - process(): added interpret() call between extraction and prompt building
   - process(): passes interpreted into build_with_history()
   - process(): includes interpreted in the returned dict
-  - Everything else unchanged.
+
+# CHANGE LOG (v4):
+#   - process(): removed normalized_history — interpreter receives prior_history directly
+#   - _call_gemini(): strengthened INSTRUCTIONS block
+
+CHANGE LOG (v5):
+  - Added _decide() private method — maps interpreted context to a decision type
+  - process(): calls _decide() after interpretation
+  - process(): passes decision into build_with_history()
+  - API response format UNCHANGED
 """
 
 import logging
@@ -44,7 +30,7 @@ from typing import Literal
 
 from config.settings import get_settings
 from models.schemas  import BuiltPrompt, LLMRawResponse
-from services.memory_store        import memory_store   # Shared in-memory store (single-process only; replace with DB/Redis in production)
+from services.memory_store import memory_store
 
 logger = logging.getLogger(__name__)
 
@@ -93,12 +79,13 @@ class AIService:
     """
     Orchestrates the full AI pipeline for a single user message.
 
-    v3 pipeline:
+    v5 pipeline:
         user message + session_id
           └─► MemoryStore.add(user message)              [step 1]
           └─► MemoryStore.get(history)                   [step 2]
           └─► SymptomExtractor.extract()                 [step 3]
-          └─► SymptomInterpreter.interpret()             [step 4]  <- NEW
+          └─► SymptomInterpreter.interpret()             [step 4]
+          └─► _decide()                                  [step 4.5]  <- NEW
           └─► PromptBuilder.build_with_history()         [step 5]
           └─► _call_llm()                                [step 6]
           └─► SafetyFilter.filter()                      [step 7]
@@ -108,13 +95,13 @@ class AIService:
 
     def __init__(self) -> None:
         from services.symptom_extractor   import SymptomExtractor
-        from services.symptom_interpreter import SymptomInterpreter  # <- NEW
+        from services.symptom_interpreter import SymptomInterpreter
         from services.prompt_builder      import PromptBuilder
         from services.safety_filter       import SafetyFilter
 
         self.settings       = get_settings()
         self.extractor      = SymptomExtractor()
-        self.interpreter    = SymptomInterpreter()                   # <- NEW
+        self.interpreter    = SymptomInterpreter()
         self.prompt_builder = PromptBuilder()
         self.safety_filter  = SafetyFilter()
         self.memory         = memory_store
@@ -123,7 +110,7 @@ class AIService:
 
     async def process(self, user_message: str, session_id: str) -> dict:
         """
-        Full v3 pipeline: message + session_id -> structured response.
+        Full v5 pipeline: message + session_id -> structured response.
 
         Args:
             user_message: Raw text from the user.
@@ -149,32 +136,39 @@ class AIService:
         extracted = self.extractor.extract(user_message)
         logger.debug("Extracted: %s", extracted)
 
-        # ── Step 4: interpret health context ─────────────────────  <- NEW
-        normalized_history = [
-            {"role": m.role, "content": m.content}
-            for m in prior_history
-        ]
+        # ── Step 4: interpret health context ──────────────────────
         try:
             interpreted = self.interpreter.interpret(
                 user_message,
                 extracted,
                 normalized_history,
             )
-        except Exception as e:
-            logger.exception("Interpreter failed")
+        except Exception:
+            logger.exception("Interpreter failed — continuing without interpretation")
             interpreted = None
-        logger.debug("Interpreted: %s", interpreted)
 
         # guard to check if the interpreter failed
         if not isinstance(interpreted, dict):
             interpreted = None
 
+        logger.debug("Interpreted: %s", interpreted)
+
+        # ── Step 4.5: decide response strategy ────────────────────  <- NEW
+        decision = self._decide(interpreted)
+        logger.debug("Decision: %s", decision)
+
         # ── Step 5: build prompt ──────────────────────────────────
+        # prompt_builder expects history as list[dict], so convert here.
+        normalized_history = [
+            {"role": m.role, "content": m.content}
+            for m in prior_history
+        ]
         built_prompt: BuiltPrompt = self.prompt_builder.build_with_history(
             user_message,
             extracted,
-            prior_history,
-            interpreted,   # <- NEW
+            normalized_history,
+            interpreted,
+            decision=decision,   # <- NEW
         )
 
         logger.debug("SYSTEM PROMPT:\n%s", built_prompt.system_prompt)
@@ -196,14 +190,44 @@ class AIService:
         self.memory.add(session_id, role="assistant", content=result.reply)
         self.memory.trim(session_id)
 
+        # API response format unchanged
         return {
             "reply":       result.reply,
             "extracted":   extracted,
-            "interpreted": interpreted,   # <- NEW
+            "interpreted": interpreted,
             "safe":        not result.was_modified,
         }
 
-    # ── LLM dispatch — UNCHANGED from v1 ─────────────────────────
+    # ── Decision layer ────────────────────────────────────────────  <- NEW
+
+    def _decide(self, interpreted: dict | None) -> dict:
+        """
+        Maps the interpreted health context to a response strategy.
+
+        Returns a decision dict with:
+          type   — "ask" | "escalate" | "respond"
+          reason — short string explaining why this type was chosen
+        """
+        # No interpretation available — respond with what we have
+        if interpreted is None:
+            return {"type": "respond", "reason": "no_interpretation"}
+
+        confidence = interpreted.get("confidence", "low")
+        severity   = interpreted.get("severity",   "unknown")
+        trend      = interpreted.get("trend",      "unknown")
+
+        # Low confidence — not enough information to give advice yet
+        if confidence == "low":
+            return {"type": "ask", "reason": "low_confidence"}
+
+        # Severe and actively worsening — needs urgent escalation
+        if severity == "severe" and trend == "worsening":
+            return {"type": "escalate", "reason": "high_risk"}
+
+        # Everything else — normal structured response
+        return {"type": "respond", "reason": "normal"}
+
+    # ── LLM dispatch (unchanged) ──────────────────────────────────
 
     async def _call_llm(self, prompt: BuiltPrompt) -> LLMRawResponse:
         provider: Literal["openai", "anthropic", "gemini", "mock"] = (
@@ -286,16 +310,14 @@ class AIService:
 
         client = genai.Client(api_key=self.settings.GEMINI_API_KEY)
 
-        combined_prompt = f"""
-        SYSTEM:
-        {prompt.system_prompt}
-
-        USER:
-        {prompt.user_prompt}
-
-        INSTRUCTIONS:
-        Follow all system rules strictly.
-        """
+        combined_prompt = (
+            f"SYSTEM:\n{prompt.system_prompt}"
+            f"\n\nUSER:\n{prompt.user_prompt}"
+            f"\n\nINSTRUCTIONS:"
+            f"\nFollow all system rules strictly."
+            f"\nBase your reasoning on interpreted context and conversation history."
+            f"\nDo not introduce new symptoms."
+        )
 
         response = client.models.generate_content(
             model=self.settings.GEMINI_MODEL,
