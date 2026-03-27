@@ -141,7 +141,7 @@ class AIService:
             interpreted = self.interpreter.interpret(
                 user_message,
                 extracted,
-                normalized_history,
+                prior_history,
             )
         except Exception:
             logger.exception("Interpreter failed — continuing without interpretation")
