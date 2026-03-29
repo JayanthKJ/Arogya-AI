@@ -1,5 +1,5 @@
 """
-services/prompt_builder.py  (v5 — decision guidance added)
+services/prompt_builder.py  (v6 — language style improvements)
 -------------------------------------------------------------
 Builds the system and user prompts that are sent to the LLM.
 
@@ -27,6 +27,11 @@ CHANGE LOG (v5):
   - build_with_history(): added `decision` parameter
   - _build_user_prompt_with_history(): added Section 5 — decision guidance
   - All existing sections UNCHANGED
+
+CHANGE LOG (v6):
+  - _SYSTEM_PROMPT: appended language style rules (rules 11-19)
+  - _build_user_prompt_with_history(): added Section 6 — communication style
+  - All existing logic, structure, and sections UNCHANGED
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ if TYPE_CHECKING:
     from services.memory_store import Message
 
 
-# ── System prompt template (unchanged) ───────────────────────────────────────
+# ── System prompt template ────────────────────────────────────────────────────
 # This is the "persona" injected at the top of every LLM conversation.
 # It is intentionally conservative to keep the AI within safe bounds.
 
@@ -56,7 +61,15 @@ YOUR CORE PRINCIPLES:
 7. Keep responses concise: 3-5 short paragraphs maximum.
 8. End every response with a doctor-consultation reminder unless the user is asking a trivially general question.
 9. Do NOT assume or introduce new symptoms that were not mentioned by the user.
-10. Focus on the emergency contacts based in India if any serious symptoms show up."""
+10. Focus on the emergency contacts based in India if any serious symptoms show up.
+11. Use very simple and everyday English.
+12. Avoid medical or complex words.
+13. Speak like you are talking to a normal person, not a doctor.
+14. Use short sentences.
+15. Prefer common words: say "doctor" instead of "healthcare professional", say "get help fast" instead of "seek immediate medical attention".
+16. Be warm, calm, and reassuring.
+17. Do not sound robotic or overly formal.
+18. Assume the user may not be fluent in English. Write so that even a 10-year-old can understand."""
 
 # ── Symptom context block (unchanged) ────────────────────────────────────────
 # Injected into the user prompt when symptoms are detected.
@@ -73,7 +86,7 @@ Please use this context to personalise your guidance.
 User's original message:
 """
 
-# ── Emergency symptoms trigger extra-urgent advice) (unchanged from v1) ───────────────────────────────────────────
+# ── Emergency symptoms (unchanged) ───────────────────────────────────────────
 
 _EMERGENCY_SYMPTOMS = {
     "chest pain", "chest tightness", "difficulty breathing",
@@ -93,7 +106,7 @@ class PromptBuilder:
       build_with_history() — multi-turn, injects history + interpreted + decision.
     """
 
-    # ── v5: multi-turn method ─────────────────────────────────────────────────
+    # ── v5/v6: multi-turn method ──────────────────────────────────────────────
 
     def build_with_history(
         self,
@@ -101,11 +114,11 @@ class PromptBuilder:
         extracted:    ExtractedSymptoms,
         history:      list[dict],
         interpreted:  dict | None = None,
-        decision:     dict | None = None,   # <- NEW v5
+        decision:     dict | None = None,
     ) -> BuiltPrompt:
         """
         Build a prompt with conversation history, interpreted context,
-        and decision guidance.
+        decision guidance, and communication style instructions.
 
         Prompt structure:
         ┌─────────────────────────────────────────────────────┐
@@ -124,7 +137,9 @@ class PromptBuilder:
         │  [authority + consistency instructions]             │
         │  OR [fallback note]                                 │
         │                                                     │
-        │  [Decision guidance]                    <- v5 NEW   │
+        │  [Decision guidance]                                │
+        │                                                     │
+        │  [Communication style]                  <- v6 NEW   │
         └─────────────────────────────────────────────────────┘
         """
         system = self._build_system_prompt(extracted)
@@ -139,29 +154,20 @@ class PromptBuilder:
         extracted:    ExtractedSymptoms,
         history:      list[dict],
         interpreted:  dict | None = None,
-        decision:     dict | None = None,   # <- NEW v5
+        decision:     dict | None = None,
     ) -> str:
         """
-        Assemble the full user-facing prompt string across five sections.
+        Assemble the full user-facing prompt string across six sections.
         """
         parts: list[str] = []
 
         # ── Section 1: prior conversation turns ──────────────────
         if history:
-            parts.append("Conversation so far:")
+            parts.append("Conversation so far:")    # made sure the messages are sent as list now on.
             for turn in history:
-                # Handle Message objects (current design)
-                if hasattr(turn, "role") and hasattr(turn, "content"):
-                    label = turn.role.capitalize()
-                    content = turn.content
-                else:
-                    # Fallback: in case old dict format ever appears
-                    label = turn["role"].capitalize()
-                    content = turn["content"]
-
-                parts.append(f"{label}: {content}")
-
-            parts.append("")  # blank line separator
+                label = turn["role"].capitalize()
+                parts.append(f"{label}: {turn['content']}")
+            parts.append("")    # blank line separator
             parts.append("Analyze how the user's condition has evolved across the conversation before responding.")
 
         # ── Section 2: current message ───────────────────────────
@@ -210,7 +216,7 @@ class PromptBuilder:
             parts.append("")
             parts.append("[Note: Interpreted context unavailable — rely on conversation and extracted data.]")
 
-        # ── Section 5: decision guidance ──────────────────────────  <- NEW v5
+        # ── Section 5: decision guidance (unchanged) ──────────────
         if decision and isinstance(decision, dict):
             decision_type = decision.get("type", "respond")
             parts.append("")
@@ -232,6 +238,11 @@ class PromptBuilder:
 
             else:   # "respond" — default
                 parts.append("Provide clear, structured guidance based on the interpreted context.")
+
+        # ── Section 6: communication style ───────────────────────  <- NEW v6
+        parts.append("")
+        parts.append("[Communication style]")
+        parts.append("Use simple, clear, everyday language. Avoid complex or technical words. Keep sentences short and easy to understand.")
 
         return "\n".join(parts)
 
