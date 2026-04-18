@@ -154,7 +154,7 @@ class AIService:
         logger.debug("Interpreted: %s", interpreted)
 
         # ── Step 4.5: decide response strategy ────────────────────  <- NEW
-        decision = self._decide(interpreted)
+        decision = self._decide(interpreted, prior_history)
         logger.debug("Decision: %s", decision)
 
         # ── Step 5: build prompt ──────────────────────────────────
@@ -200,12 +200,13 @@ class AIService:
 
     # ── Decision layer ────────────────────────────────────────────  <- NEW
 
-    def _decide(self, interpreted: dict | None) -> dict:
+    def _decide(self, interpreted: dict | None, history: list = None) -> dict:
         """
         Maps the interpreted health context to a response strategy.
+        Also considers interaction state to prevent repeated questioning.
 
         Returns a decision dict with:
-          type   — "ask" | "escalate" | "respond"
+          type   — "ask" | "escalate" | "respond" | "caution"
           reason — short string explaining why this type was chosen
         """
         # No interpretation available — respond with what we have
@@ -218,15 +219,53 @@ class AIService:
 
         # Low confidence — not enough information to give advice yet
         if confidence == "low":
-            return {"type": "ask", "reason": "low_confidence"}
-
+            decision_type = "ask"
         # Severe and actively worsening — needs urgent escalation
-        if severity == "severe" and trend == "worsening":
-            return {"type": "escalate", "reason": "high_risk"}
+        elif severity == "severe" and trend == "worsening":
+            decision_type = "escalate"
+        else:
+            decision_type = "respond"
 
-        # Everything else — normal structured response
-        return {"type": "respond", "reason": "normal"}
+        # Get interaction state to prevent repeated questioning
+        state = self._analyze_interaction_state(history or [])
 
+        # Prevent repeated questioning — if we already asked, just respond
+        if decision_type == "ask" and state["asked_recently"]:
+            decision_type = "respond"
+
+        # If condition is improving, avoid asking again
+        if interpreted and interpreted.get("trend") == "improving":
+            decision_type = "respond"
+
+        return {"type": decision_type}
+
+    def _analyze_interaction_state(self, history) -> dict:
+        """
+        Extract conversational state:
+        - asked_recently: whether assistant asked a question in last turn
+        - user_responded: whether user replied after that
+        """
+        if not history:
+            return {
+                "asked_recently": False,
+                "user_responded": False,
+            }
+
+        last_assistant = None
+        # Find last assistant message
+        for msg in reversed(history):
+            if msg.role == "assistant":
+                last_assistant = msg.content
+                break
+
+        asked_recently = False
+        if last_assistant and "?" in last_assistant:
+            asked_recently = True
+
+        return {
+            "asked_recently": asked_recently,
+            "user_responded": True,   # current message exists
+        }
     # ── LLM dispatch (unchanged) ──────────────────────────────────
 
     async def _call_llm(self, prompt: BuiltPrompt) -> LLMRawResponse:
@@ -238,7 +277,33 @@ class AIService:
         elif provider == "anthropic":
             return await self._call_anthropic(prompt)
         elif provider == "gemini":
-            return await self._call_gemini(prompt)
+           try:
+                return await self._call_gemini(prompt)
+
+           except Exception as e:
+                error_str = str(e)
+
+                logger.error(f"LLM call failed: {e}")
+
+                # 🔴 Handle Gemini overload / server issues
+                if "503" in error_str or "UNAVAILABLE" in error_str:
+                    return LLMRawResponse(
+                        raw_text="I'm a bit busy right now. Please try again in a few seconds.",
+                        model_used="fallback"
+                    )
+
+                # 🔴 Handle missing / invalid API key
+                if "API key" in error_str or "401" in error_str or "403" in error_str:
+                    return LLMRawResponse(
+                        raw_text="I'm having trouble connecting right now. Please try again later.",
+                        model_used="fallback"
+                    )
+
+                # 🔴 Generic fallback
+                return LLMRawResponse(
+                    raw_text="Something went wrong on my side. Please try again.",
+                    model_used="fallback"
+                )
         elif provider == "mock":
             return self._call_mock(prompt)
         else:
@@ -303,12 +368,18 @@ class AIService:
         Requires: pip install google-genai
         """
 
+        # correction to make the api key being read here properly
+        import os
+        api_key = self.settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            raise ValueError("Missing GEMINI_API_KEY")
+
         try:
             from google import genai
         except ImportError:
             raise RuntimeError("google-genai not installed. Run: pip install google-genai")
 
-        client = genai.Client(api_key=self.settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
 
         combined_prompt = (
             f"SYSTEM:\n{prompt.system_prompt}"

@@ -1,37 +1,17 @@
 """
-services/prompt_builder.py  (v6 — language style improvements)
--------------------------------------------------------------
-Builds the system and user prompts that are sent to the LLM.
+services/prompt_builder.py  (v10 — decision-driven, minimal, non-redundant)
+-----------------------------------------------------------------------------
+Builds the system and user prompts sent to the LLM.
 
-Responsibilities:
-  1. Define Arogya AI's identity, tone, and safety boundaries.
-  2. Enrich the user prompt with the structured symptom context so the
-     LLM can give more relevant guidance without needing to re-parse text.
-  3. Keep the system prompt short and direct — LLMs follow concise
-     instructions more reliably than long paragraphs.
+Pipeline context:
+  User → Extractor → Interpreter → Decision Layer → PromptBuilder → LLM
 
-CHANGE LOG (v2):
-  - Added `build_with_history(user_message, extracted, history)` method
-  - Original `build()` method is UNCHANGED — existing callers are unaffected
-
-CHANGE LOG (v3):
-  - build_with_history(): added `interpreted` parameter
-  - _build_user_prompt_with_history(): added Section 4 — interpreted health context
-
-CHANGE LOG (v4):
-  - Section 1: added active history analysis instruction
-  - Section 4: strengthened interpreted context authority + consistency instruction
-  - Section 4: added fallback note when interpreted is None
-
-CHANGE LOG (v5):
-  - build_with_history(): added `decision` parameter
-  - _build_user_prompt_with_history(): added Section 5 — decision guidance
-  - All existing sections UNCHANGED
-
-CHANGE LOG (v6):
-  - _SYSTEM_PROMPT: appended language style rules (rules 11-19)
-  - _build_user_prompt_with_history(): added Section 6 — communication style
-  - All existing logic, structure, and sections UNCHANGED
+CHANGE LOG (v10):
+  - build_with_history() fully rewritten: minimal, structured, decision-aware
+  - Added _build_health_state() helper — renders interpreted context cleanly
+  - Added _build_response_strategy() helper — maps decision type to behavior
+  - Removed all redundancy: extracted symptoms suppressed when interpreted exists
+  - _build_system_prompt(), build(), _build_user_prompt() UNCHANGED
 """
 
 from __future__ import annotations
@@ -45,7 +25,7 @@ if TYPE_CHECKING:
     from services.memory_store import Message
 
 
-# ── System prompt template ────────────────────────────────────────────────────
+# ── System prompt (unchanged) ─────────────────────────────────────────────────
 # This is the "persona" injected at the top of every LLM conversation.
 # It is intentionally conservative to keep the AI within safe bounds.
 
@@ -69,9 +49,22 @@ YOUR CORE PRINCIPLES:
 15. Prefer common words: say "doctor" instead of "healthcare professional", say "get help fast" instead of "seek immediate medical attention".
 16. Be warm, calm, and reassuring.
 17. Do not sound robotic or overly formal.
-18. Assume the user may not be fluent in English. Write so that even a 10-year-old can understand."""
+18. Assume the user may not be fluent in English. Write so that even a 10-year-old can understand.
+19. Do NOT ask too many questions.
+20. Ask at most ONE follow-up question per response.
+21. Only ask a question if it is truly necessary to help the user.
+22. If the user message is already clear, do NOT ask any questions.
+23. Make questions optional and gentle, not forceful.
+24. Use soft phrasing like: "If you want, you can tell me...", "You can also share...", "If it helps, you can mention...".
+25. Do NOT ask multiple questions in a row.
+26. Avoid sounding like an interrogation.
+27. Always provide helpful guidance or suggestions in every response.
+28. Do NOT respond with only a question.
+29. A question can be included only AFTER giving useful information.
+30. The primary goal is to help the user, not to ask questions.
+31. If you ask a question, limit it to ONE and make it optional."""
 
-# ── Symptom context block (unchanged) ────────────────────────────────────────
+# ── Symptom context block — used by legacy build() only ──────────────────────
 # Injected into the user prompt when symptoms are detected.
 
 _SYMPTOM_CONTEXT_TEMPLATE = """
@@ -102,11 +95,11 @@ class PromptBuilder:
     Stateless builder — instantiate once and reuse.
 
     Public methods:
-      build()              — single-turn (no history), original behaviour.
-      build_with_history() — multi-turn, injects history + interpreted + decision.
+      build()              — single-turn (no history), legacy behaviour.
+      build_with_history() — multi-turn, decision-driven prompt construction.
     """
 
-    # ── v5/v6: multi-turn method ──────────────────────────────────────────────
+    # ── v10: decision-driven multi-turn method ────────────────────────────────
 
     def build_with_history(
         self,
@@ -117,30 +110,15 @@ class PromptBuilder:
         decision:     dict | None = None,
     ) -> BuiltPrompt:
         """
-        Build a prompt with conversation history, interpreted context,
-        decision guidance, and communication style instructions.
+        Build a minimal, structured, decision-aware prompt.
 
-        Prompt structure:
-        ┌─────────────────────────────────────────────────────┐
-        │  [System prompt]                                    │
-        │                                                     │
-        │  Conversation so far:                               │
-        │  User: ...  /  Assistant: ...                       │
-        │  [active analysis instruction]                      │
-        │                                                     │
-        │  Current message:                                   │
-        │  User: <current message>                            │
-        │                                                     │
-        │  [Extracted symptom context — if any]               │
-        │                                                     │
-        │  [Interpreted health context — if any]              │
-        │  [authority + consistency instructions]             │
-        │  OR [fallback note]                                 │
-        │                                                     │
-        │  [Decision guidance]                                │
-        │                                                     │
-        │  [Communication style]                  <- v6 NEW   │
-        └─────────────────────────────────────────────────────┘
+        User prompt structure:
+        ┌──────────────────────────────────────┐
+        │  1. Conversation History (if any)    │
+        │  2. Current Message                  │
+        │  3. Health State (from interpreted)  │
+        │  4. Response Strategy (from decision)│
+        └──────────────────────────────────────┘
         """
         system = self._build_system_prompt(extracted)
         user   = self._build_user_prompt_with_history(
@@ -161,90 +139,119 @@ class PromptBuilder:
         """
         parts: list[str] = []
 
-        # ── Section 1: prior conversation turns ──────────────────
+        # ── Section 1: conversation history ──────────────────────
         if history:
-            parts.append("Conversation so far:")    # made sure the messages are sent as list now on.
+            parts.append("[Conversation History]")
             for turn in history:
                 label = turn["role"].capitalize()
                 parts.append(f"{label}: {turn['content']}")
-            parts.append("")    # blank line separator
+            parts.append("")
             parts.append("Analyze how the user's condition has evolved across the conversation before responding.")
 
         # ── Section 2: current message ───────────────────────────
-        parts.append("")
-        parts.append("Current message:")
+        parts.append("[Current Message]")
         parts.append(f"User: {user_message}")
-
-        # ── Section 3: extracted symptom context (unchanged) ─────
-        if extracted.symptoms or extracted.duration:
-            parts.append("")
-            parts.append("[Extracted context from current message]")
-            if extracted.symptoms:
-                parts.append(f"- Symptoms  : {', '.join(extracted.symptoms)}")
-            if extracted.duration:
-                parts.append(f"- Duration  : {extracted.duration}")
-            if extracted.body_parts:
-                parts.append(f"- Body parts: {', '.join(extracted.body_parts)}")
-            if extracted.severity_hints:
-                parts.append(f"- Severity  : {', '.join(extracted.severity_hints)}")
-
-        # ── Section 4: interpreted health context (unchanged) ─────
-        if interpreted and isinstance(interpreted, dict):
-            parts.append("")
-            parts.append("[IMPORTANT: Interpreted health context — use this to understand progression]")
-
-            symptoms_str = ", ".join(interpreted["symptoms"]) if interpreted["symptoms"] else "none detected"
-            parts.append(f"- Symptoms : {symptoms_str}")
-            parts.append(f"- Severity : {interpreted['severity']}")
-            parts.append(f"- Trend    : {interpreted['trend']}")
-            parts.append(f"- Duration : {interpreted['duration']}")
-            parts.append("")
-            parts.append("Prioritize this over assumptions. Do NOT introduce new symptoms.")
-            parts.append("This interpreted context is the most reliable structured understanding of the user's condition.")
-            parts.append("You MUST base your reasoning primarily on this.")
-            parts.append("")
-            parts.append("Ensure your response is consistent with both the conversation history and interpreted context.")
-            parts.append("")
-            parts.append("[Response Guidelines]")
-            parts.append("- Base your response on the interpreted trend and severity.")
-            parts.append("- If trend is worsening, emphasize caution and monitoring.")
-            parts.append("- If severity is severe, clearly advise seeking medical attention.")
-            parts.append("- If symptoms are unclear, ask clarifying questions.")
-            parts.append("- Do NOT contradict the interpreted context.")
-
-        else:
-            parts.append("")
-            parts.append("[Note: Interpreted context unavailable — rely on conversation and extracted data.]")
-
-        # ── Section 5: decision guidance (unchanged) ──────────────
-        if decision and isinstance(decision, dict):
-            decision_type = decision.get("type", "respond")
-            parts.append("")
-            parts.append("[Decision guidance]")
-
-            if decision_type == "ask":
-                parts.append("The user's condition is unclear.")
-                parts.append("Your task:")
-                parts.append("- Ask 1-2 specific follow-up questions")
-                parts.append("- Do NOT give advice yet")
-                parts.append("- Do NOT assume symptoms")
-
-            elif decision_type == "escalate":
-                parts.append("The situation may be serious.")
-                parts.append("Your task:")
-                parts.append("- Begin with strong urgency")
-                parts.append("- Advise immediate medical attention")
-                parts.append("- Keep tone calm and clear")
-
-            else:   # "respond" — default
-                parts.append("Provide clear, structured guidance based on the interpreted context.")
-
-        # ── Section 6: communication style ───────────────────────  <- NEW v6
         parts.append("")
-        parts.append("[Communication style]")
-        parts.append("Use simple, clear, everyday language. Avoid complex or technical words. Keep sentences short and easy to understand.")
+
+        # ── Section 3: health state ───────────────────────────────
+        # If interpreted exists → use it exclusively (no extracted duplication).
+        # If not → fall back to raw extracted symptoms only.
+        parts.append(self._build_health_state(extracted, interpreted))
+
+        # ── Section 4: response strategy ─────────────────────────
+        parts.append(self._build_response_strategy(decision))
 
         return "\n".join(parts)
+
+    # ── Helper: health state ──────────────────────────────────────────────────
+
+    def _build_health_state(
+        self,
+        extracted:   ExtractedSymptoms,
+        interpreted: dict | None,
+    ) -> str:
+        """
+        Render the health state block.
+        Uses interpreted output when available — never duplicates with extracted.
+        Falls back to raw extracted symptoms only when interpreter is unavailable.
+        """
+        lines: list[str] = ["[Health State]"]
+
+        if interpreted and isinstance(interpreted, dict):
+            # Interpreted is the primary source — extracted is NOT repeated
+            symptoms_str = ", ".join(interpreted["symptoms"]) if interpreted["symptoms"] else "none mentioned"
+            lines.append(f"- symptoms : {symptoms_str}")
+            lines.append(f"- trend    : {interpreted.get('trend', 'unknown')}")
+            lines.append(f"- severity : {interpreted.get('severity', 'unknown')}")
+            lines.append(f"- duration : {interpreted.get('duration', 'unknown')}")
+        else:
+            # Interpreter unavailable — use raw extracted symptoms as minimal fallback
+            if extracted.symptoms:
+                lines.append(f"- symptoms : {', '.join(extracted.symptoms)}")
+            else:
+                lines.append("- symptoms : not detected")
+            lines.append("- trend    : not clear yet")
+            lines.append("- severity : not clear yet")
+            lines.append("- duration : not clear yet")
+
+        return "\n".join(lines)
+
+    # ── Helper: response strategy ─────────────────────────────────────────────
+
+    def _build_response_strategy(self, decision: dict | None) -> str:
+        """
+        Map the decision type to strict, directive LLM behavior instructions.
+        This is the primary driver of response variation.
+        """
+        lines: list[str] = ["", "[Response Strategy]"]
+        lines.append("You MUST follow this strategy while generating the response.")
+        lines.append("")
+
+        decision_type = decision.get("type", "respond") if decision else "respond"
+
+        if decision_type == "ask":
+            lines.append("type: ask")
+            lines.append("Follow this order strictly:")
+            lines.append("1. Ask 1 or 2 specific clarifying questions.")
+            lines.append("2. Do NOT give full advice.")
+            lines.append("3. Do NOT assume any symptoms.")
+            lines.append("Rules:")
+            lines.append("- Ask at most 2 questions.")
+            lines.append("- Keep questions short and clear.")
+
+        elif decision_type == "caution":
+            lines.append("type: caution")
+            lines.append("Follow this order strictly:")
+            lines.append("1. First, clearly acknowledge that the condition is getting worse.")
+            lines.append("2. Then briefly explain why this matters.")
+            lines.append("3. Then give ONLY 1-2 simple actions.")
+            lines.append("4. Suggest seeing a doctor if the condition continues or worsens.")
+            lines.append("5. Optionally ask ONE short question at the end.")
+            lines.append("Rules:")
+            lines.append("- Do NOT give long explanations.")
+            lines.append("- Do NOT ask more than one question.")
+
+        elif decision_type == "escalate":
+            lines.append("type: escalate")
+            lines.append("Follow this order strictly:")
+            lines.append("1. Immediately start with a clear and urgent warning.")
+            lines.append("2. Strongly advise immediate medical attention.")
+            lines.append("Rules:")
+            lines.append("- Do NOT give casual suggestions.")
+            lines.append("- Do NOT ask questions.")
+            lines.append("- Keep it short and serious.")
+
+        else:   # "respond" — default
+            lines.append("type: respond")
+            lines.append("Follow this order strictly:")
+            lines.append("1. Start by acknowledging the user's condition clearly.")
+            lines.append("2. Give a clear and simple explanation.")
+            lines.append("3. Provide 1-2 helpful suggestions.")
+            lines.append("Rules:")
+            lines.append("- Keep the tone calm and easy to understand.")
+            lines.append("- Avoid long explanations.")
+
+        return "\n".join(lines)
 
     # ── Original single-turn method (unchanged) ───────────────────────────────
 
