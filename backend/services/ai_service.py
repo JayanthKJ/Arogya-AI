@@ -13,9 +13,9 @@ CHANGE LOG (v3):
   - process(): passes interpreted into build_with_history()
   - process(): includes interpreted in the returned dict
 
-# CHANGE LOG (v4):
-#   - process(): removed normalized_history — interpreter receives prior_history directly
-#   - _call_gemini(): strengthened INSTRUCTIONS block
+CHANGE LOG (v4):
+  - process(): removed normalized_history — interpreter receives prior_history directly
+  - _call_gemini(): strengthened INSTRUCTIONS block
 
 CHANGE LOG (v5):
   - Added _decide() private method — maps interpreted context to a decision type
@@ -82,7 +82,7 @@ class AIService:
     v5 pipeline:
         user message + session_id
           └─► MemoryStore.add(user message)              [step 1]
-          └─► MemoryStore.get(history)                   [step 2]
+          └─► MemoryStore.get_history(history)                   [step 2]
           └─► SymptomExtractor.extract()                 [step 3]
           └─► SymptomInterpreter.interpret()             [step 4]
           └─► _decide()                                  [step 4.5]  <- NEW
@@ -111,13 +111,6 @@ class AIService:
     async def process(self, user_message: str, session_id: str) -> dict:
         """
         Full v5 pipeline: message + session_id -> structured response.
-
-        Args:
-            user_message: Raw text from the user.
-            session_id:   Stable identifier for this conversation.
-
-        Returns:
-             a dict matching ChatResponse schema (plus interpreted context).
         """
         logger.info(
             "Processing message | session=%s | length=%d",
@@ -125,10 +118,10 @@ class AIService:
         )
 
         # ── Step 1: store user message ────────────────────────────
-        self.memory.add(session_id, role="user", content=user_message)
+        self.memory.add_message(session_id, role="user", content=user_message)
 
         # ── Step 2: retrieve prior history ────────────────────────
-        full_history  = self.memory.get(session_id)
+        full_history  = self.memory.get_history(session_id)
         prior_history = full_history[:-1]   # exclude the message just added
         logger.debug("Session %s | prior turns=%d", session_id, len(prior_history))
 
@@ -153,9 +146,17 @@ class AIService:
 
         logger.debug("Interpreted: %s", interpreted)
 
-        # ── Step 4.5: decide response strategy ────────────────────  <- NEW
-        decision = self._decide(interpreted, prior_history)
+        # ── Step 4.5: fetch session meta + decide response strategy ──
+        meta       = self.memory.get_meta(session_id)
+        prev_state = meta.get("last_state") if meta else None
+        decision   = self._decide(interpreted, prior_history, meta, prev_state)
         logger.debug("Decision: %s", decision)
+
+        # Store decision and interpreted state for next turn
+        self.memory.update_meta(session_id, {
+            "last_decision": decision["type"],
+            "last_state":    interpreted,
+        })
 
         # ── Step 5: build prompt ──────────────────────────────────
         # prompt_builder expects history as list[dict], so convert here.
@@ -187,7 +188,7 @@ class AIService:
             )
 
         # ── Step 8: store assistant reply + trim ──────────────────
-        self.memory.add(session_id, role="assistant", content=result.reply)
+        self.memory.add_message(session_id, role="assistant", content=result.reply)
         self.memory.trim(session_id)
 
         # API response format unchanged
@@ -200,15 +201,27 @@ class AIService:
 
     # ── Decision layer ────────────────────────────────────────────  <- NEW
 
-    def _decide(self, interpreted: dict | None, history: list = None) -> dict:
+    def _decide(
+        self,
+        interpreted: dict | None,
+        history:     list = None,
+        meta:        dict = None,
+        prev_state:  dict | None = None,
+    ) -> dict:
         """
-        Maps the interpreted health context to a response strategy.
-        Also considers interaction state to prevent repeated questioning.
+        Maps interpreted health context to a strict response strategy.
+        Applies priority-ordered rules with full session awareness.
 
-        Returns a decision dict with:
-          type   — "ask" | "escalate" | "respond" | "caution"
-          reason — short string explaining why this type was chosen
+        Priority order (highest → lowest):
+          1. Escalation   — worsening trend confirmed across two turns
+          2. Caution      — new worsening trend this turn
+          3. Improving    — trend is improving → respond normally
+          4. Repetition   — already asked last turn → respond
+          5. Low conf     — not enough info → ask
+          6. Default      — respond
         """
+        meta = meta or {}
+
         # No interpretation available — respond with what we have
         if interpreted is None:
             return {"type": "respond", "reason": "no_interpretation"}
@@ -217,24 +230,38 @@ class AIService:
         severity   = interpreted.get("severity",   "unknown")
         trend      = interpreted.get("trend",      "unknown")
 
-        # Low confidence — not enough information to give advice yet
-        if confidence == "low":
-            decision_type = "ask"
-        # Severe and actively worsening — needs urgent escalation
-        elif severity == "severe" and trend == "worsening":
-            decision_type = "escalate"
+        last_decision = meta.get("last_decision")
+        prev_trend    = prev_state.get("trend") if prev_state else None
+
+        # ── Rule 1: ESCALATE — worsening confirmed across two consecutive turns ─
+        # Highest priority — overrides everything else
+        if trend == "worsening" and prev_trend == "worsening":
+            return {"type": "escalate", "reason": "persistent_worsening"}
+
+        # ── Rule 2: CAUTION — worsening this turn but not confirmed yet ──────────
+        if trend == "worsening" and prev_trend != "worsening":
+            decision_type = "caution"
+
+        # ── Rule 3: IMPROVING — condition getting better ──────────────────────────
+        elif trend == "improving":
+            decision_type = "respond"
+
+        # ── Rule 4: REPETITION PREVENTION — already asked last turn ──────────────
+        # Only applies when no new symptoms have appeared
+        elif last_decision == "ask" and confidence != "low":
+            decision_type = "respond"
+
+        # ── Rule 5: LOW CONFIDENCE — need clarification ───────────────────────────
+        elif confidence == "low":
+            # Check interaction state to avoid asking twice in a row
+            state = self._analyze_interaction_state(history or [])
+            if state["asked_recently"] or last_decision == "ask":
+                decision_type = "respond"
+            else:
+                decision_type = "ask"
+
+        # ── Rule 6: DEFAULT — normal structured response ──────────────────────────
         else:
-            decision_type = "respond"
-
-        # Get interaction state to prevent repeated questioning
-        state = self._analyze_interaction_state(history or [])
-
-        # Prevent repeated questioning — if we already asked, just respond
-        if decision_type == "ask" and state["asked_recently"]:
-            decision_type = "respond"
-
-        # If condition is improving, avoid asking again
-        if interpreted and interpreted.get("trend") == "improving":
             decision_type = "respond"
 
         return {"type": decision_type}
@@ -266,6 +293,7 @@ class AIService:
             "asked_recently": asked_recently,
             "user_responded": True,   # current message exists
         }
+
     # ── LLM dispatch (unchanged) ──────────────────────────────────
 
     async def _call_llm(self, prompt: BuiltPrompt) -> LLMRawResponse:
@@ -314,7 +342,6 @@ class AIService:
     # ── OpenAI ────────────────────────────────────────────────────
 
     async def _call_openai(self, prompt: BuiltPrompt) -> LLMRawResponse:
-        """Unchanged from v1."""
         try:
             from openai import AsyncOpenAI
         except ImportError:
@@ -337,7 +364,6 @@ class AIService:
     # ── Anthropic ────────────────────────────────────────────────────
 
     async def _call_anthropic(self, prompt: BuiltPrompt) -> LLMRawResponse:
-        """Unchanged from v1."""
         try:
             import anthropic
         except ImportError:
@@ -368,7 +394,6 @@ class AIService:
         Requires: pip install google-genai
         """
 
-        # correction to make the api key being read here properly
         import os
         api_key = self.settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
@@ -379,7 +404,7 @@ class AIService:
         except ImportError:
             raise RuntimeError("google-genai not installed. Run: pip install google-genai")
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key) # correction to make the api key being read here properly
 
         combined_prompt = (
             f"SYSTEM:\n{prompt.system_prompt}"
@@ -399,7 +424,6 @@ class AIService:
         return LLMRawResponse(raw_text=text.strip(), model_used=self.settings.GEMINI_MODEL)
 
     def _call_mock(self, prompt: BuiltPrompt) -> LLMRawResponse:
-        """Unchanged from v1."""
         global _mock_index
         reply = _MOCK_REPLIES[_mock_index % len(_MOCK_REPLIES)]
         _mock_index += 1

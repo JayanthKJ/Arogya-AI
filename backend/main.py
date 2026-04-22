@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 
 get_settings.cache_clear()
 settings = get_settings()
-print("PROVIDER:", settings.LLM_PROVIDER)
-print("GEMINI KEY:", settings.GEMINI_API_KEY)
+# print("PROVIDER:", settings.LLM_PROVIDER)
+# print("GEMINI KEY:", settings.GEMINI_API_KEY)
 
 # ── Lifespan (startup / shutdown hooks) ──────────────────────────────────────
 

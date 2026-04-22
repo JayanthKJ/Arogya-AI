@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: str =""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "models/gemini-flash-lite-latest"
 
     # ── LLM generation parameters ─────────────────────────────────
     LLM_MAX_TOKENS: int = 512

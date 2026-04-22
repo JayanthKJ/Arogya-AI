@@ -18,16 +18,12 @@ from __future__ import annotations
 
 from models.schemas import ExtractedSymptoms, BuiltPrompt
 
-# Import the Message dataclass from memory_store for type hints only.
-# No business logic from memory_store enters this file.
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from services.memory_store import Message
 
 
 # ── System prompt (unchanged) ─────────────────────────────────────────────────
-# This is the "persona" injected at the top of every LLM conversation.
-# It is intentionally conservative to keep the AI within safe bounds.
 
 _SYSTEM_PROMPT = """You are Arogya AI, a compassionate and knowledgeable health guidance assistant designed to help people — especially elderly users — understand their health better.
 
@@ -65,7 +61,6 @@ YOUR CORE PRINCIPLES:
 31. If you ask a question, limit it to ONE and make it optional."""
 
 # ── Symptom context block — used by legacy build() only ──────────────────────
-# Injected into the user prompt when symptoms are detected.
 
 _SYMPTOM_CONTEXT_TEMPLATE = """
 [Structured context extracted from user's message]
@@ -190,9 +185,9 @@ class PromptBuilder:
                 lines.append(f"- symptoms : {', '.join(extracted.symptoms)}")
             else:
                 lines.append("- symptoms : not detected")
-            lines.append("- trend    : not clear yet")
-            lines.append("- severity : not clear yet")
-            lines.append("- duration : not clear yet")
+            lines.append("- trend    : unknown")
+            lines.append("- severity : unknown")
+            lines.append("- duration : unknown")
 
         return "\n".join(lines)
 
@@ -205,6 +200,17 @@ class PromptBuilder:
         """
         lines: list[str] = ["", "[Response Strategy]"]
         lines.append("You MUST follow this strategy while generating the response.")
+        lines.append("")
+
+        # ── Conversation Awareness — injected before all decision types ──────────
+        lines.append("[Conversation Awareness]")
+        lines.append("- Compare the user's current condition with what they said in earlier messages.")
+        lines.append("- If the condition has worsened, explicitly mention the change.")
+        lines.append("  Example: \"Earlier you mentioned it was getting worse — now it sounds even more severe.\"")
+        lines.append("- Do NOT just repeat the user's words back to them.")
+        lines.append("- Show that you understand how things have progressed.")
+        lines.append("- Do NOT repeat questions already asked in this conversation.")
+        lines.append("- If the user answered a question earlier, acknowledge that naturally.")
         lines.append("")
 
         decision_type = decision.get("type", "respond") if decision else "respond"
@@ -225,7 +231,7 @@ class PromptBuilder:
             lines.append("1. First, clearly acknowledge that the condition is getting worse.")
             lines.append("2. Then briefly explain why this matters.")
             lines.append("3. Then give ONLY 1-2 simple actions.")
-            lines.append("4. Suggest seeing a doctor if the condition continues or worsens.")
+            lines.append("4. Then suggest seeing a doctor if needed.")
             lines.append("5. Optionally ask ONE short question at the end.")
             lines.append("Rules:")
             lines.append("- Do NOT give long explanations.")
@@ -234,20 +240,21 @@ class PromptBuilder:
         elif decision_type == "escalate":
             lines.append("type: escalate")
             lines.append("Follow this order strictly:")
-            lines.append("1. Immediately start with a clear and urgent warning.")
-            lines.append("2. Strongly advise immediate medical attention.")
+            lines.append("1. Start with a clear and urgent warning.")
+            lines.append("2. Strongly advise the user to get medical help immediately.")
             lines.append("Rules:")
-            lines.append("- Do NOT give casual suggestions.")
-            lines.append("- Do NOT ask questions.")
-            lines.append("- Keep it short and serious.")
+            lines.append("- DO NOT ask any questions.")
+            lines.append("- DO NOT give general explanations or casual suggestions.")
+            lines.append("- Keep the response short and serious.")
 
         else:   # "respond" — default
             lines.append("type: respond")
             lines.append("Follow this order strictly:")
-            lines.append("1. Start by acknowledging the user's condition clearly.")
+            lines.append("1. Acknowledge the user's current condition simply.")
             lines.append("2. Give a clear and simple explanation.")
             lines.append("3. Provide 1-2 helpful suggestions.")
             lines.append("Rules:")
+            lines.append("- No unnecessary questions.")
             lines.append("- Keep the tone calm and easy to understand.")
             lines.append("- Avoid long explanations.")
 
