@@ -28,6 +28,8 @@ from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from routes import chat_router
 
+from config.database import init_db
+
 # ── Logging setup ─────────────────────────────────────────────────────────────
 # Configure before anything else so all subsequent loggers inherit the format.
 
@@ -40,8 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-get_settings.cache_clear()
-settings = get_settings()
+# get_settings.cache_clear()
+# settings = get_settings()
 # print("PROVIDER:", settings.LLM_PROVIDER)
 # print("GEMINI KEY:", settings.GEMINI_API_KEY)
 
@@ -60,7 +62,13 @@ async def lifespan(app: FastAPI):
         settings.LLM_PROVIDER,
         settings.DEBUG,
     )
+
+    # database initialized here
+    init_db()
+    logger.info("Database initialized")
+
     yield
+
     logger.info("Shutting down %s", settings.APP_NAME)
 
 

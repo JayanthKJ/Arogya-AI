@@ -25,6 +25,10 @@ from config.settings import Settings, get_settings
 from models.schemas  import ChatRequest, ChatResponse, ErrorResponse
 from services        import AIService
 
+from config.database import get_session
+from sqlmodel import Session, select
+from models.db_models import ChatMessage
+
 logger = logging.getLogger(__name__)
 
 # One router instance, mounted in main.py with prefix="/chat"
@@ -64,6 +68,7 @@ async def chat(
     request:    ChatRequest = ...,
     ai_service: AIService   = Depends(get_ai_service),
     settings:   Settings    = Depends(get_settings),
+    db:         Session     = Depends(get_session),   # added to allow db interaction
 ) -> ChatResponse:
     """
     Main chat endpoint.
@@ -86,7 +91,8 @@ async def chat(
         # ── v2 change: pass session_id alongside the message ──────
         result = await ai_service.process(
             user_message=request.message,
-            session_id=request.session_id,   # ← NEW
+            session_id=request.session_id,
+            db=db,  # added db connection
         )
         return ChatResponse(**result)
 
@@ -128,3 +134,23 @@ async def chat_health(settings: Settings = Depends(get_settings)):
         "status":   "ok",
         "provider": settings.LLM_PROVIDER,
     }
+
+# ──────────────────────────────────────────────
+# GET /chat/history/{session_id}   ← NEW
+# ──────────────────────────────────────────────
+@router.get("/history/{session_id}")
+async def get_history(
+    session_id: str,
+    db: Session = Depends(get_session),
+):
+    """
+    Returns the full conversation history for a session.
+    Response shape: [{"role": "user"|"assistant", "content": "..."}]
+    """
+    messages = db.exec(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at)
+    ).all()
+
+    return [{"role": m.role, "content": m.content} for m in messages]

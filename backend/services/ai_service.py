@@ -30,7 +30,9 @@ from typing import Literal
 
 from config.settings import get_settings
 from models.schemas  import BuiltPrompt, LLMRawResponse
-from services.memory_store import memory_store
+
+from models.db_models import ChatMessage
+from sqlmodel import select, Session
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,7 @@ class AIService:
     v5 pipeline:
         user message + session_id
           └─► MemoryStore.add(user message)              [step 1]
-          └─► MemoryStore.get_history(history)                   [step 2]
+          └─► MemoryStore.get_history(history)           [step 2]
           └─► SymptomExtractor.extract()                 [step 3]
           └─► SymptomInterpreter.interpret()             [step 4]
           └─► _decide()                                  [step 4.5]  <- NEW
@@ -104,11 +106,10 @@ class AIService:
         self.interpreter    = SymptomInterpreter()
         self.prompt_builder = PromptBuilder()
         self.safety_filter  = SafetyFilter()
-        self.memory         = memory_store
 
     # ── Public API ────────────────────────────────────────────────
 
-    async def process(self, user_message: str, session_id: str) -> dict:
+    async def process(self, user_message: str, session_id: str, db: Session) -> dict:
         """
         Full v5 pipeline: message + session_id -> structured response.
         """
@@ -118,12 +119,28 @@ class AIService:
         )
 
         # ── Step 1: store user message ────────────────────────────
-        self.memory.add_message(session_id, role="user", content=user_message)
+        db.add(ChatMessage(
+            session_id=session_id,
+            role="user",
+            content=user_message
+        ))
+        db.commit()
 
         # ── Step 2: retrieve prior history ────────────────────────
-        full_history  = self.memory.get_history(session_id)
-        prior_history = full_history[:-1]   # exclude the message just added
-        logger.debug("Session %s | prior turns=%d", session_id, len(prior_history))
+        messages = db.exec(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at)
+        ).all()
+
+        prior_history_objs = messages[:-1]
+
+        normalized_history = [
+            {"role": m.role, "content": m.content}
+            for m in prior_history_objs
+        ]
+
+        logger.debug("Session %s | prior turns=%d", session_id, len(normalized_history))
 
         # ── Step 3: extract symptoms ──────────────────────────────
         extracted = self.extractor.extract(user_message)
@@ -134,7 +151,7 @@ class AIService:
             interpreted = self.interpreter.interpret(
                 user_message,
                 extracted,
-                prior_history,
+                normalized_history,
             )
         except Exception:
             logger.exception("Interpreter failed — continuing without interpretation")
@@ -147,29 +164,18 @@ class AIService:
         logger.debug("Interpreted: %s", interpreted)
 
         # ── Step 4.5: fetch session meta + decide response strategy ──
-        meta       = self.memory.get_meta(session_id)
-        prev_state = meta.get("last_state") if meta else None
-        decision   = self._decide(interpreted, prior_history, meta, prev_state)
+        meta = {}
+        prev_state = None
+        decision = self._decide(interpreted, normalized_history, meta, prev_state)
         logger.debug("Decision: %s", decision)
 
         # Store decision and interpreted state for next turn
-        self.memory.update_meta(session_id, {
-            "last_decision": decision["type"],
-            "last_state":    interpreted,
-        })
-
-        # ── Step 5: build prompt ──────────────────────────────────
-        # prompt_builder expects history as list[dict], so convert here.
-        normalized_history = [
-            {"role": m.role, "content": m.content}
-            for m in prior_history
-        ]
         built_prompt: BuiltPrompt = self.prompt_builder.build_with_history(
             user_message,
             extracted,
             normalized_history,
             interpreted,
-            decision=decision,   # <- NEW
+            decision=decision,  # <- NEW
         )
 
         logger.debug("SYSTEM PROMPT:\n%s", built_prompt.system_prompt)
@@ -188,8 +194,12 @@ class AIService:
             )
 
         # ── Step 8: store assistant reply + trim ──────────────────
-        self.memory.add_message(session_id, role="assistant", content=result.reply)
-        self.memory.trim(session_id)
+        db.add(ChatMessage(
+            session_id=session_id,
+            role="assistant",
+            content=result.reply
+        ))
+        db.commit()
 
         # API response format unchanged
         return {
@@ -281,8 +291,8 @@ class AIService:
         last_assistant = None
         # Find last assistant message
         for msg in reversed(history):
-            if msg.role == "assistant":
-                last_assistant = msg.content
+            if msg["role"] == "assistant":
+                last_assistant = msg["content"]
                 break
 
         asked_recently = False
@@ -404,7 +414,7 @@ class AIService:
         except ImportError:
             raise RuntimeError("google-genai not installed. Run: pip install google-genai")
 
-        client = genai.Client(api_key=api_key) # correction to make the api key being read here properly
+        client = genai.Client(api_key=api_key)
 
         combined_prompt = (
             f"SYSTEM:\n{prompt.system_prompt}"

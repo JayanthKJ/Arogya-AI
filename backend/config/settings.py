@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Reads from a .env file automatically (if present)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
+    # initializing DB link to connect database to the system
+    DATABASE_URL: str = "sqlite:///./dev.db"
+
 
 @lru_cache()
 def get_settings() -> Settings:
