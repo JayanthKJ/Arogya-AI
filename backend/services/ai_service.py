@@ -1,41 +1,26 @@
-"""
-services/ai_service.py  (v5 — decision layer added)
--------------------------------------------------------------
-Thin abstraction layer over different LLM providers.
-
-CHANGE LOG (v2):
-  - __init__: imports and stores a MemoryStore instance
-  - process(): accepts `session_id`, runs the 7-step v2 pipeline
-
-CHANGE LOG (v3):
-  - __init__: added self.interpreter = SymptomInterpreter()
-  - process(): added interpret() call between extraction and prompt building
-  - process(): passes interpreted into build_with_history()
-  - process(): includes interpreted in the returned dict
-
-CHANGE LOG (v4):
-  - process(): removed normalized_history — interpreter receives prior_history directly
-  - _call_gemini(): strengthened INSTRUCTIONS block
-
-CHANGE LOG (v5):
-  - Added _decide() private method — maps interpreted context to a decision type
-  - process(): calls _decide() after interpretation
-  - process(): passes decision into build_with_history()
-  - API response format UNCHANGED
-"""
+from __future__ import annotations
 
 import logging
 import textwrap
+from typing import Optional
 from typing import Literal
 
-from config.settings import get_settings
-from models.schemas  import BuiltPrompt, LLMRawResponse
+from sqlmodel import Session, select
 
+from config.settings import get_settings
+from models.schemas import (
+    ChatResponse,
+    ExtractedSymptoms,
+    BuiltPrompt,
+    LLMRawResponse,
+)
 from models.db_models import ChatMessage
-from sqlmodel import select, Session
+from services.symptom_extractor import SymptomExtractor
+from services.symptom_interpreter import SymptomInterpreter
+from services.prompt_builder import PromptBuilder
+from services.safety_filter import SafetyFilter
 
 logger = logging.getLogger(__name__)
-
 
 # ── Mock responses (unchanged) ────────────────────────────────────────────────
 
@@ -74,6 +59,7 @@ _MOCK_REPLIES: list[str] = [
 
 _mock_index = 0
 
+MAX_LIMITS = 6 # maximum number of messages being sent from earlier conversation till now.
 
 # ── AIService ─────────────────────────────────────────────────────────────────
 
@@ -95,58 +81,67 @@ class AIService:
           └─► ChatResponse
     """
 
-    def __init__(self) -> None:
-        from services.symptom_extractor   import SymptomExtractor
-        from services.symptom_interpreter import SymptomInterpreter
-        from services.prompt_builder      import PromptBuilder
-        from services.safety_filter       import SafetyFilter
-
-        self.settings       = get_settings()
-        self.extractor      = SymptomExtractor()
-        self.interpreter    = SymptomInterpreter()
+    def __init__(self):
+        self.settings = get_settings()
+        self.extractor = SymptomExtractor()
+        self.interpreter = SymptomInterpreter()
         self.prompt_builder = PromptBuilder()
-        self.safety_filter  = SafetyFilter()
+        self.safety_filter = SafetyFilter()
 
-    # ── Public API ────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
 
-    async def process(self, user_message: str, session_id: str, db: Session) -> dict:
-        """
-        Full v5 pipeline: message + session_id -> structured response.
-        """
-        logger.info(
-            "Processing message | session=%s | length=%d",
-            session_id, len(user_message),
-        )
+    async def process(
+        self,
+        user_message: str,
+        session_id: str,
+        db: Session,
+        user_id: str,
+    ) -> ChatResponse:
+        # Step 1: Persist user message (scoped to user)
+        try:
+            db.add(
+                ChatMessage(
+                    session_id=session_id,
+                    user_id=user_id,
+                    role="user",
+                    content=user_message,
+                )
+            )
+            db.commit()
+        except:
+            db.rollback()
+            raise
 
-        # ── Step 1: store user message ────────────────────────────
-        db.add(ChatMessage(
-            session_id=session_id,
-            role="user",
-            content=user_message
-        ))
-        db.commit()
-
-        # ── Step 2: retrieve prior history ────────────────────────
-        messages = db.exec(
+        # Step 2: Fetch full history scoped to BOTH session AND user
+        messages: list[ChatMessage] = db.exec(
             select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at)
+            .where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.user_id == user_id,
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(MAX_LIMITS)
         ).all()
 
-        prior_history_objs = messages[:-1]
+        messages = list(reversed(messages))
+
+        # prior_history = everything except the current (last) message
+        prior_history: list[ChatMessage] = messages[:-1]
 
         normalized_history = [
             {"role": m.role, "content": m.content}
-            for m in prior_history_objs
+            for m in prior_history
         ]
 
         logger.debug("Session %s | prior turns=%d", session_id, len(normalized_history))
 
-        # ── Step 3: extract symptoms ──────────────────────────────
-        extracted = self.extractor.extract(user_message)
+        # Step 3: Extract symptoms (rule-based, unchanged)
+        extracted: ExtractedSymptoms = self.extractor.extract(user_message)
         logger.debug("Extracted: %s", extracted)
 
-        # ── Step 4: interpret health context ──────────────────────
+        # Step 4: Interpret health context
         try:
             interpreted = self.interpreter.interpret(
                 user_message,
@@ -163,29 +158,29 @@ class AIService:
 
         logger.debug("Interpreted: %s", interpreted)
 
-        # ── Step 4.5: fetch session meta + decide response strategy ──
-        meta = {}
-        prev_state = None
+        # Step 4.5: Decision layer (persistent meta disabled for now)
+        meta: dict = {}
+        prev_state: Optional[dict] = None
         decision = self._decide(interpreted, normalized_history, meta, prev_state)
         logger.debug("Decision: %s", decision)
 
-        # Store decision and interpreted state for next turn
+        # Step 5: Build prompt (prompt_builder expects list-of-dicts)
         built_prompt: BuiltPrompt = self.prompt_builder.build_with_history(
             user_message,
             extracted,
             normalized_history,
             interpreted,
-            decision=decision,  # <- NEW
+            decision=decision,
         )
 
         logger.debug("SYSTEM PROMPT:\n%s", built_prompt.system_prompt)
         logger.debug("USER PROMPT:\n%s", built_prompt.user_prompt)
 
-        # ── Step 6: call LLM ──────────────────────────────────────
+        # Step 6: Call LLM
         raw: LLMRawResponse = await self._call_llm(built_prompt)
         logger.debug("LLM response (%s): %.120s...", raw.model_used, raw.raw_text)
 
-        # ── Step 7: safety filter ─────────────────────────────────
+        # Step 7: Safety filter
         result = self.safety_filter.filter(raw.raw_text)
         if result.was_modified:
             logger.warning(
@@ -193,30 +188,38 @@ class AIService:
                 session_id, user_message,
             )
 
-        # ── Step 8: store assistant reply + trim ──────────────────
-        db.add(ChatMessage(
-            session_id=session_id,
-            role="assistant",
-            content=result.reply
-        ))
-        db.commit()
+        # Step 8: Persist assistant reply (scoped to user)
+        try:
+            db.add(
+                ChatMessage(
+                    session_id=session_id,
+                    user_id=user_id,
+                    role="assistant",
+                    content=result.reply,
+                )
+            )
+            db.commit()
+        except:
+            db.rollback()
+            raise
 
-        # API response format unchanged
-        return {
-            "reply":       result.reply,
-            "extracted":   extracted,
-            "interpreted": interpreted,
-            "safe":        not result.was_modified,
-        }
+        return ChatResponse(
+            reply=result.reply,
+            extracted=extracted,
+            interpreted=interpreted,
+            safe=result.was_modified is False,
+        )
 
-    # ── Decision layer ────────────────────────────────────────────  <- NEW
+    # ------------------------------------------------------------------
+    # Decision logic  (unchanged)
+    # ------------------------------------------------------------------
 
     def _decide(
-        self,
-        interpreted: dict | None,
-        history:     list = None,
-        meta:        dict = None,
-        prev_state:  dict | None = None,
+            self,
+            interpreted: dict | None,
+            history=None,
+            meta: dict = None,
+            prev_state: dict | None = None,
     ) -> dict:
         """
         Maps interpreted health context to a strict response strategy.
@@ -237,44 +240,44 @@ class AIService:
             return {"type": "respond", "reason": "no_interpretation"}
 
         confidence = interpreted.get("confidence", "low")
-        severity   = interpreted.get("severity",   "unknown")
-        trend      = interpreted.get("trend",      "unknown")
+        trend = interpreted.get("trend", "unknown")
+        severity = interpreted.get("severity", "unknown")
 
         last_decision = meta.get("last_decision")
-        prev_trend    = prev_state.get("trend") if prev_state else None
+        prev_trend = prev_state.get("trend") if prev_state else None
 
-        # ── Rule 1: ESCALATE — worsening confirmed across two consecutive turns ─
-        # Highest priority — overrides everything else
-        if trend == "worsening" and prev_trend == "worsening":
+        interaction = self._analyze_interaction_state(history or [])
+        asked_recently = interaction.get("asked_recently", False)
+
+        # ── Rule 0: HIGH SEVERITY overrides everything ───────────────
+        if severity in ["high", "critical"]:
+            return {"type": "escalate", "reason": "high_severity"}
+
+        # ── Rule 1: Persistent worsening ─────────────────────────────
+        elif trend == "worsening" and prev_trend == "worsening":
             return {"type": "escalate", "reason": "persistent_worsening"}
 
-        # ── Rule 2: CAUTION — worsening this turn but not confirmed yet ──────────
-        if trend == "worsening" and prev_trend != "worsening":
-            decision_type = "caution"
+        # ── Rule 2: New worsening ────────────────────────────────────
+        elif trend == "worsening":
+            return {"type": "caution", "reason": "new_worsening"}
 
-        # ── Rule 3: IMPROVING — condition getting better ──────────────────────────
+        # ── Rule 3: Improving ────────────────────────────────────────
         elif trend == "improving":
-            decision_type = "respond"
+            return {"type": "respond", "reason": "improving"}
 
-        # ── Rule 4: REPETITION PREVENTION — already asked last turn ──────────────
-        # Only applies when no new symptoms have appeared
+        # ── Rule 4: Avoid repetition ─────────────────────────────────
         elif last_decision == "ask" and confidence != "low":
-            decision_type = "respond"
+            return {"type": "respond", "reason": "avoid_repetition"}
 
-        # ── Rule 5: LOW CONFIDENCE — need clarification ───────────────────────────
+        # ── Rule 5: Low confidence ───────────────────────────────────
         elif confidence == "low":
             # Check interaction state to avoid asking twice in a row
-            state = self._analyze_interaction_state(history or [])
-            if state["asked_recently"] or last_decision == "ask":
-                decision_type = "respond"
+            if asked_recently or last_decision == "ask":
+                return {"type": "respond", "reason": "already_asked"}
             else:
-                decision_type = "ask"
+                return {"type": "ask", "reason": "low_confidence"}
 
-        # ── Rule 6: DEFAULT — normal structured response ──────────────────────────
-        else:
-            decision_type = "respond"
-
-        return {"type": decision_type}
+        return {"type": "respond", "reason": "default"}
 
     def _analyze_interaction_state(self, history) -> dict:
         """
@@ -283,28 +286,43 @@ class AIService:
         - user_responded: whether user replied after that
         """
         if not history:
-            return {
-                "asked_recently": False,
-                "user_responded": False,
-            }
+            return {"asked_recently": False, "user_responded": False}
 
         last_assistant = None
-        # Find last assistant message
+
+        # Find last assistant message (robust to dict or object)
         for msg in reversed(history):
-            if msg["role"] == "assistant":
-                last_assistant = msg["content"]
+            if isinstance(msg, dict):
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+            else:
+                role = getattr(msg, "role", "")
+                content = getattr(msg, "content", "")
+
+            if role == "assistant":
+                last_assistant = content
                 break
 
-        asked_recently = False
-        if last_assistant and "?" in last_assistant:
-            asked_recently = True
+        asked_recently = bool(last_assistant and "?" in last_assistant)
+
+        # Optional: detect if user replied after that
+        user_responded = False
+        if len(history) >= 2:
+            last = history[-1]
+            second_last = history[-2]
+
+            last_role = last.get("role") if isinstance(last, dict) else getattr(last, "role", "")
+            prev_role = second_last.get("role") if isinstance(second_last, dict) else getattr(second_last, "role", "")
+
+            user_responded = prev_role == "assistant" and last_role == "user"
 
         return {
             "asked_recently": asked_recently,
-            "user_responded": True,   # current message exists
+            "user_responded": user_responded,
         }
-
-    # ── LLM dispatch (unchanged) ──────────────────────────────────
+    # ------------------------------------------------------------------
+    # LLM dispatch  (unchanged)
+    # ------------------------------------------------------------------
 
     async def _call_llm(self, prompt: BuiltPrompt) -> LLMRawResponse:
         provider: Literal["openai", "anthropic", "gemini", "mock"] = (
@@ -417,21 +435,21 @@ class AIService:
         client = genai.Client(api_key=api_key)
 
         combined_prompt = (
-            f"SYSTEM:\n{prompt.system_prompt}"
-            f"\n\nUSER:\n{prompt.user_prompt}"
-            f"\n\nINSTRUCTIONS:"
-            f"\nFollow all system rules strictly."
-            f"\nBase your reasoning on interpreted context and conversation history."
-            f"\nDo not introduce new symptoms."
+            f"SYSTEM:\n{prompt.system_prompt}\n\n"
+            f"USER:\n{prompt.user_prompt}\n\n"
+            f"INSTRUCTIONS:\nFollow all system rules strictly.\n"
+            f"Base your reasoning on interpreted context and conversation history.\n"
+            f"Do not introduce new symptoms."
         )
 
         response = client.models.generate_content(
             model=self.settings.GEMINI_MODEL,
             contents=combined_prompt,
         )
-
-        text = response.text or ""
-        return LLMRawResponse(raw_text=text.strip(), model_used=self.settings.GEMINI_MODEL)
+        return LLMRawResponse(
+            raw_text=response.text.strip(),
+            model_used=self.settings.GEMINI_MODEL,
+        )
 
     def _call_mock(self, prompt: BuiltPrompt) -> LLMRawResponse:
         global _mock_index

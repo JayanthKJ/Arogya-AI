@@ -1,58 +1,41 @@
-"""
-routes/chat.py  (v2 — passes session_id into AIService.process)
-Defines the /chat router with a single POST endpoint.
----------------------------------------------------------------
-CHANGE LOG (v2):
-  - chat() handler: reads session_id from ChatRequest and passes it
-    to ai_service.process(message, session_id)
-  - Everything else (error handling, response shape, health endpoint)
-    is UNCHANGED from v1, which is as follows:
-    Route handler responsibilities (only):
-    - Validate the incoming request  (Pydantic handles this automatically)
-    - Delegate to AIService
-    - Return a typed response
-    - Handle known exceptions with appropriate HTTP status codes
+from __future__ import annotations
 
-Business logic lives in services/, not here.
-"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
+
+from auth.dependencies import get_current_user
+from config.database import get_session
+from models.db_models import ChatMessage, User
+from models.schemas import ChatRequest, ChatResponse, ErrorResponse
+from services.ai_service import AIService
+from config.settings import get_settings, Settings
 
 import logging
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
-
-from config.settings import Settings, get_settings
-from models.schemas  import ChatRequest, ChatResponse, ErrorResponse
-from services        import AIService
-
-from config.database import get_session
-from sqlmodel import Session, select
-from models.db_models import ChatMessage
-
 logger = logging.getLogger(__name__)
 
-# One router instance, mounted in main.py with prefix="/chat"
-router = APIRouter(tags=["Chat"])
+router = APIRouter()
 
+# ── Module-level singleton — do NOT instantiate per-request ───────────
+_ai_service = AIService()
 
 # ── Dependency: shared AIService instance ────────────────────────────────────
 # FastAPI calls this once per request; the instance itself is lightweight
 # because the heavy SDK clients are created lazily inside _call_llm().
 
-# After — one AIService for the server's lifetime
-_ai_service = AIService()     # ← constructed once at startup
-
 def get_ai_service() -> AIService:
-    return _ai_service        # ← same instance returned every time
+    return _ai_service
 
 
-# ── POST /chat ────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# POST /chat
+# ---------------------------------------------------------------------------
 
 @router.post(
-    "/",
+    "",
     response_model=ChatResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "LLM unavailable"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
@@ -65,10 +48,10 @@ def get_ai_service() -> AIService:
     ),
 )
 async def chat(
-    request:    ChatRequest = ...,
-    ai_service: AIService   = Depends(get_ai_service),
-    settings:   Settings    = Depends(get_settings),
-    db:         Session     = Depends(get_session),   # added to allow db interaction
+    request: ChatRequest,
+    db: Session = Depends(get_session),
+    ai_service: AIService = Depends(get_ai_service),
+    current_user: User = Depends(get_current_user),
 ) -> ChatResponse:
     """
     Main chat endpoint.
@@ -83,74 +66,95 @@ async def chat(
         }
     """
     logger.info(
-        "POST /chat | session=%s | message_length=%d",
-        request.session_id, len(request.message),
+        "POST /chat | user=%s | session=%s | msg_len=%d",
+        current_user.id,
+        request.session_id,
+        len(request.message),
     )
 
     try:
-        # ── v2 change: pass session_id alongside the message ──────
+        # ── v3 change: pass session_id and user_id alongside the message ──────
         result = await ai_service.process(
             user_message=request.message,
             session_id=request.session_id,
-            db=db,  # added db connection
+            db=db,
+            user_id=current_user.id,
         )
-        return ChatResponse(**result)
+        return result
+
 
     except ValueError as exc:
-        # Raised for bad configuration (e.g. unknown LLM_PROVIDER)
-        logger.error("Configuration error: %s", exc)
+        # Client-side issue (bad input, invalid state)
+        logger.warning("Bad request: %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail=str(exc)
         )
 
     except RuntimeError as exc:
-        # Raised when an SDK is missing or the LLM API returns a hard failure
-        logger.exception("LLM call failed: %s", exc)
+        # External/system dependency failure (LLM, SDK, etc.)
+        logger.error("Service failure (LLM/SDK): %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             detail="The AI service is temporarily unavailable. Please try again shortly.",
         )
 
     except Exception as exc:
-        # Catch-all — never expose raw tracebacks to the client
-        logger.exception("Unexpected error in POST /chat: %s", exc)
+        # Unexpected server-side error
+        logger.exception("Unexpected server error in /chat: %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="An unexpected error occurred. Please try again.",
         )
 
+# ---------------------------------------------------------------------------
+# GET /chat/health  (public — no auth required)
+# ---------------------------------------------------------------------------
 
-# ── GET /chat/health — UNCHANGED ──────────────────────────────────────────────
-# Lightweight liveness check that load-balancers / k8s can poll.
-
-@router.get(
-    "/health",
-    summary="Chat service health check",
-    include_in_schema=False
-)
-async def chat_health(settings: Settings = Depends(get_settings)):
+@router.get("/health")
+async def health(settings: Settings = Depends(get_settings)):
     return {
-        "status":   "ok",
+        "status": "ok",
         "provider": settings.LLM_PROVIDER,
     }
 
-# ──────────────────────────────────────────────
-# GET /chat/history/{session_id}   ← NEW
-# ──────────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# GET /chat/history/{session_id}  (protected — user-isolated)
+# ---------------------------------------------------------------------------
+
 @router.get("/history/{session_id}")
 async def get_history(
     session_id: str,
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Returns the full conversation history for a session.
-    Response shape: [{"role": "user"|"assistant", "content": "..."}]
+    Returns conversation history scoped to BOTH the session_id and the
+    authenticated user's id, preventing cross-user data leakage.
     """
+    logger.info(
+        "GET /chat/history | user=%s | session=%s",
+        current_user.id,
+        session_id,
+    )
     messages = db.exec(
         select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at)
+        .where(
+            ChatMessage.session_id == session_id,
+            ChatMessage.user_id == current_user.id,
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .limit(50)
     ).all()
 
-    return [{"role": m.role, "content": m.content} for m in messages]
+    messages = list(reversed(messages))
+
+    return [
+        {
+            "role": m.role,
+            "content": m.content,
+            "created_at": m.created_at.isoformat(),
+        }
+        for m in messages
+    ]

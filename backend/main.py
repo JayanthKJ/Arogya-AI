@@ -29,6 +29,7 @@ from config.settings import get_settings
 from routes import chat_router
 
 from config.database import init_db
+from routes.auth import router as auth_router
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 # Configure before anything else so all subsequent loggers inherit the format.
@@ -93,7 +94,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["*"], # allows all the methods, for future-proofing
         allow_headers=["Content-Type", "Authorization"],
     )
 
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
 
     # ── Routers ───────────────────────────────────────────────────
     app.include_router(chat_router, prefix="/chat")
+    app.include_router(auth_router, prefix="/auth", tags=["auth"])  # auth system connectivity initialized
 
     # ── Root health check ──────────────────────────────────────────
     @app.get("/", tags=["Health"], summary="Root health check")

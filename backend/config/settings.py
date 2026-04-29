@@ -8,6 +8,7 @@ Nothing is hard-coded; secrets never appear in source code.
 
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 
 class Settings(BaseSettings):
@@ -35,8 +36,13 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-3-5-haiku-20241022"
 
     # Gemini
-    GEMINI_API_KEY: str =""
+    GEMINI_API_KEY: str
     GEMINI_MODEL: str = "models/gemini-flash-lite-latest"
+
+    # Auth setup stuff
+    SECRET_KEY: str  # e.g. openssl rand -hex 32
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # ── LLM generation parameters ─────────────────────────────────
     LLM_MAX_TOKENS: int = 512
@@ -52,7 +58,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     # initializing DB link to connect database to the system
-    DATABASE_URL: str = "sqlite:///./dev.db"
+    DATABASE_URL: str
 
 
 @lru_cache()
