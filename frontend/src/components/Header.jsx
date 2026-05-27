@@ -42,10 +42,10 @@ function MenuIcon() {
   );
 }
 
-export default function Header({ onMenuClick }) {
+export default function Header({ onMenuClick, onLogout }) {
   return (
     <header className="flex items-center justify-between px-5 py-4 bg-white border-b-2 border-green-100 flex-shrink-0">
-
+      
       {/* ── Left: menu toggle + identity ── */}
       <div className="flex items-center gap-3">
         <button
@@ -66,11 +66,21 @@ export default function Header({ onMenuClick }) {
 
         {/* Name + status */}
         <div>
-          <h1 className="font-bold text-green-900 leading-tight" style={{ fontSize: "22px" }}>
+          <h1
+            className="font-bold text-green-900 leading-tight"
+            style={{ fontSize: "22px" }}
+          >
             {APP_NAME}
           </h1>
-          <p className="text-green-600 font-semibold flex items-center gap-1" style={{ fontSize: "14px" }}>
-            <span className="inline-block w-2 h-2 rounded-full bg-green-500" aria-hidden="true" />
+
+          <p
+            className="text-green-600 font-semibold flex items-center gap-1"
+            style={{ fontSize: "14px" }}
+          >
+            <span
+              className="inline-block w-2 h-2 rounded-full bg-green-500"
+              aria-hidden="true"
+            />
             Online · Ready to Help
           </p>
         </div>
@@ -78,6 +88,8 @@ export default function Header({ onMenuClick }) {
 
       {/* ── Right: actions ── */}
       <div className="flex items-center gap-2">
+        
+        {/* Hindi toggle */}
         <button
           className="hidden sm:block border-2 border-green-200 rounded-xl px-4 py-2
                      text-green-700 font-semibold hover:bg-green-50 transition-colors"
@@ -87,6 +99,7 @@ export default function Header({ onMenuClick }) {
           हिंदी
         </button>
 
+        {/* Emergency */}
         <button
           className="border-2 border-red-200 rounded-xl px-4 py-2
                      text-red-600 font-semibold hover:bg-red-50 transition-colors"
@@ -95,6 +108,19 @@ export default function Header({ onMenuClick }) {
         >
           📞 Emergency
         </button>
+
+        {/* Logout */}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="border-2 border-gray-200 rounded-xl px-4 py-2
+                       text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
+            style={{ fontSize: "16px" }}
+            aria-label="Logout"
+          >
+            Logout
+          </button>
+        )}
       </div>
     </header>
   );

@@ -1,104 +1,78 @@
-/**
- * Sidebar.jsx
- * Left navigation panel: branding, new chat CTA, chat history list,
- * and a safety disclaimer footer.
- *
- * Props:
- *   isOpen   — boolean (controls mobile slide-in visibility)
- *   onClose  — () => void (called when overlay is tapped on mobile)
- */
+import { useState } from 'react';
+import { Menu, X, Plus } from 'lucide-react';
 
-import { APP_NAME, APP_TAGLINE, CHAT_HISTORY } from "../constants";
+export default function Sidebar({ sessions, activeSessionId, onNewChat, onSessionClick }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-export default function Sidebar({ isOpen, onClose }) {
   return (
     <>
-      {/* Mobile backdrop overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-30 md:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        className={[
-          "fixed md:static inset-y-0 left-0 z-40 md:z-auto",
-          "w-64 flex flex-col bg-green-900 text-white",
-          "transition-transform duration-300 ease-in-out md:translate-x-0",
-          isOpen ? "translate-x-0" : "-translate-x-full",
-        ].join(" ")}
-        aria-label="Sidebar navigation"
+      {/* Sidebar */}
+      <div
+        className={`${
+          isCollapsed ? 'w-0' : 'w-64'
+        } bg-gradient-to-b from-green-800 to-green-900 text-white transition-all duration-300 flex flex-col overflow-hidden`}
       >
-        {/* ── Branding ── */}
-        <div className="px-5 py-6 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="text-green-300 text-2xl">🌿</span>
-            <span className="font-bold text-white" style={{ fontSize: "22px" }}>
-              {APP_NAME}
-            </span>
-          </div>
-          <p
-            className="text-green-300 mt-1 tracking-widest uppercase font-semibold"
-            style={{ fontSize: "11px" }}
-          >
-            {APP_TAGLINE}
-          </p>
+        <div className="p-4 flex items-center justify-between border-b border-green-700">
+          {!isCollapsed && (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                  <span className="text-xl">🌿</span>
+                </div>
+                <div>
+                  <h1 className="font-semibold">Arogya AI</h1>
+                  <p className="text-xs text-green-300">YOUR HEALTH COMPANION</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* ── New Chat CTA ── */}
-        <div className="px-4 py-4">
-          <button
-            onClick={onClose}
-            className="w-full flex items-center gap-3 bg-white/10 hover:bg-white/20
-                       border border-white/20 rounded-xl px-4 py-3
-                       font-semibold transition-colors"
-            style={{ fontSize: "18px" }}
-          >
-            <span className="text-xl leading-none">＋</span>
-            New Conversation
-          </button>
-        </div>
-
-        {/* ── History label ── */}
-        <p
-          className="px-5 text-green-400 uppercase tracking-widest font-bold"
-          style={{ fontSize: "11px" }}
-        >
-          Recent Chats
-        </p>
-
-        {/* ── History list ── */}
-        <nav className="flex-1 overflow-y-auto py-2" aria-label="Chat history">
-          {CHAT_HISTORY.map((title, i) => (
+        {!isCollapsed && (
+          <>
             <button
-              key={i}
-              className={[
-                "w-full text-left flex items-start gap-3 px-4 py-3 mx-0",
-                "hover:bg-white/10 transition-colors",
-                i === 0 ? "bg-white/15" : "",
-              ].join(" ")}
-              style={{ fontSize: "17px" }}
+              onClick={onNewChat}
+              className="m-4 bg-green-700 hover:bg-green-600 rounded-lg p-3 flex items-center justify-center gap-2 transition-colors"
             >
-              <span className="w-2 h-2 rounded-full bg-green-400 mt-2 flex-shrink-0 opacity-80" />
-              <span className="text-white/80 leading-snug">{title}</span>
+              <Plus size={20} />
+              <span>New Conversation</span>
             </button>
-          ))}
-        </nav>
 
-        {/* ── Footer disclaimer ── */}
-        <div className="px-5 py-5 border-t border-white/10">
-          <p
-            className="text-white/40 text-center leading-relaxed"
-            style={{ fontSize: "13px" }}
-          >
-            ⚠ Arogya AI provides general health guidance.
-            This is not medical diagnosis.
-            Consult a doctor for serious concerns.
-          </p>
-        </div>
-      </aside>
+            <div className="flex-1 overflow-y-auto px-2">
+              <div className="text-xs text-green-400 px-3 mb-2 font-semibold">RECENT CHATS</div>
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => onSessionClick(session.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+                    activeSessionId === session.id
+                      ? 'bg-green-700'
+                      : 'hover:bg-green-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                    <span className="text-sm truncate">{session.title}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="p-4 border-t border-green-700 text-xs text-green-300">
+              ⚠️ Arogya AI provides general health guidance. This is not medical diagnosis. Consult a doctor for serious concerns.
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Toggle Button */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute top-4 left-4 z-50 bg-green-700 hover:bg-green-600 text-white p-2 rounded-lg transition-colors shadow-lg"
+        style={{ left: isCollapsed ? '16px' : '272px' }}
+      >
+        {isCollapsed ? <Menu size={20} /> : <X size={20} />}
+      </button>
     </>
   );
 }

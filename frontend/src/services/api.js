@@ -4,8 +4,9 @@
  * Currently returns mock responses for local development.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || "";
-const USE_MOCK = !BASE_URL;
+const ENV_API_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = ENV_API_URL || "http://localhost:8000";
+const USE_MOCK = !ENV_API_URL;
 
 // ------------------------------------------------------------------
 // Mock responses (used when VITE_API_URL is not set)
@@ -27,49 +28,111 @@ function getMockResponse() {
   return response;
 }
 
-// ------------------------------------------------------------------
-// Real API call
-// ------------------------------------------------------------------
-async function callAPI(messages, sessionId) {
-  const response = await fetch(`${BASE_URL}/chat/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      message: messages[messages.length - 1].content, // Send only the latest user message 
-      session_id: sessionId,
-    }),
-  });
+const getAuthHeader = () => {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `Server error: ${response.status}`);
-  }
+export const authAPI = {
+  async signup(email, password) {
+    const response = await fetch(`${BASE_URL}/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-  const data = await response.json();
-  return data.reply || data.message || data.content || "";
-}
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || "Signup failed");
+    }
 
-// ------------------------------------------------------------------
-// Exported function — used by useChat hook
-// ------------------------------------------------------------------
-/**
- * sendMessage
- * @param {Array<{role: "user"|"assistant", text: string}>} messageHistory
- * @returns {Promise<string>} AI reply text
- */
-export async function sendMessage(messageHistory, sessionId) {
-  if (USE_MOCK) {
-    // Simulate realistic network latency
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1400 + Math.random() * 900)
-    );
-    return getMockResponse();
-  }
+    return response.json();
+  },
 
-  const formatted = messageHistory.map((m) => ({
-    role: m.role === "ai" ? "assistant" : "user",
-    content: m.text,
-  }));
+  async login(email, password) {
+    const response = await fetch(`${BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-  return callAPI(formatted, sessionId); // ← sessionId passed through to callAPI
-}
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Login failed");
+    }
+
+    const data = await response.json();
+    localStorage.setItem("auth_token", data.access_token);
+    return data;
+  },
+
+  logout() {
+    localStorage.removeItem("auth_token");
+  },
+
+  isAuthenticated() {
+    return !!localStorage.getItem("auth_token");
+  },
+};
+
+// Helper function to create a delay
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const chatAPI = {
+  // Sends a user message to the backend
+  async sendMessage(message, sessionId) {
+    if (USE_MOCK) {
+      await delay(1400 + Math.random() * 900);
+      return { reply: getMockResponse() };
+    }
+
+    // Delay to simulate processing or thinking time
+    await delay(500);
+
+    const response = await fetch(`${BASE_URL}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify({ message, session_id: sessionId }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        authAPI.logout();
+        throw new Error("Session expired. Please login again.");
+      }
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to send message");
+    }
+
+    return response.json();
+  },
+
+  // Receives history from the backend
+  async getHistory(sessionId) {
+    if (USE_MOCK) {
+      await delay(500);
+      return [];
+    }
+
+    const response = await fetch(`${BASE_URL}/chat/history/${sessionId}`, {
+      method: "GET",
+      headers: {
+        ...getAuthHeader(),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        authAPI.logout();
+        throw new Error("Session expired. Please login again.");
+      }
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to fetch history");
+    }
+
+    return response.json();
+  },
+};
