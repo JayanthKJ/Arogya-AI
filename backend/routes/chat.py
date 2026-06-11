@@ -158,3 +158,41 @@ async def get_history(
         }
         for m in messages
     ]
+
+# ---------------------------------------------------------------------------
+# GET /chat/sessions
+# ---------------------------------------------------------------------------
+
+@router.get("/sessions")
+async def sessions(
+        current_user: User = Depends(get_current_user),
+        db : Session = Depends(get_session)
+):
+    """
+    Returns the complete chats of different sessions of the user
+    """
+
+    messages = db.exec(
+        select(ChatMessage)
+        .where(
+            ChatMessage.user_id == current_user.id
+        )
+        .order_by(ChatMessage.created_at.desc())
+    ).all()
+
+    sessions: dict = {}
+
+
+
+    for m in messages:
+        if m.session_id not in sessions:
+            sessions[m.session_id] = {
+                "session_id": m.session_id,
+                "title" :
+                    (m.content[:30] + "...")
+                    if len(m.content) > 30
+                    else m.content,
+                "last_updated": m.created_at.isoformat(),
+            }
+
+    return list(sessions.values())

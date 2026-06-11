@@ -80,7 +80,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const chatAPI = {
   // Sends a user message to the backend
-  async sendMessage(message, sessionId) {
+  async sendMessage(message, activeSessionId) {
     if (USE_MOCK) {
       await delay(1400 + Math.random() * 900);
       return { reply: getMockResponse() };
@@ -95,12 +95,13 @@ export const chatAPI = {
         "Content-Type": "application/json",
         ...getAuthHeader(),
       },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: activeSessionId }),
     });
 
     if (!response.ok) {
       if (response.status === 401) {
         authAPI.logout();
+        window.location.reload();
         throw new Error("Session expired. Please login again.");
       }
       const error = await response.json();
@@ -110,14 +111,14 @@ export const chatAPI = {
     return response.json();
   },
 
-  // Receives history from the backend
-  async getHistory(sessionId) {
+  // Receives specific chat history from the backend
+  async getHistory(activeSessionId) {
     if (USE_MOCK) {
       await delay(500);
       return [];
     }
 
-    const response = await fetch(`${BASE_URL}/chat/history/${sessionId}`, {
+    const response = await fetch(`${BASE_URL}/chat/history/${activeSessionId}`, {
       method: "GET",
       headers: {
         ...getAuthHeader(),
@@ -127,10 +128,39 @@ export const chatAPI = {
     if (!response.ok) {
       if (response.status === 401) {
         authAPI.logout();
+        window.location.reload();
         throw new Error("Session expired. Please login again.");
       }
       const error = await response.json();
       throw new Error(error.detail || "Failed to fetch history");
+    }
+
+    return response.json();
+  },
+
+  // Receives all chat history from the backend
+  async getSessions() {
+    if (USE_MOCK) {
+      await delay(300);
+      return [];
+    }
+
+    const response = await fetch(`${BASE_URL}/chat/sessions`, {
+      method: "GET",
+      headers: {
+      ...getAuthHeader(),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        authAPI.logout();
+        window.location.reload();
+        throw new Error("Session expired. Please login again.");
+      }
+
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to fetch sessions");
     }
 
     return response.json();

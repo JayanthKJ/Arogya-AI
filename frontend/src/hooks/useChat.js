@@ -22,25 +22,17 @@ const WELCOME_MESSAGE = createMessage(
   "Namaste! 🙏 I am Arogya AI, your personal health companion. I can help you understand your health, answer questions about medications, diet, and general wellness. How can I help you today?"
 );
 
-function getOrCreateSessionId() {
-  const existing = localStorage.getItem("sessionId");
-  if (existing) return existing;
-  const fresh = crypto.randomUUID();
-  localStorage.setItem("sessionId", fresh);
-  return fresh;
-}
-
-function loadSavedMessages(sessionId) {
+function loadSavedMessages(activeSessionId) {
   try {
-    const saved = localStorage.getItem(`messages_${sessionId}`);
+    const saved = localStorage.getItem(`messages_${activeSessionId}`);
     return saved ? JSON.parse(saved) : null;
   } catch {
     return null;
   }
 }
 
-export function useChat(sessionId) {
-  const sessionRef = useRef(sessionId || getOrCreateSessionId());
+export function useChat(activeSessionId) {
+  const sessionRef = useRef(activeSessionId);
 
   const [messages, setMessages] = useState(() => {
     const saved = loadSavedMessages(sessionRef.current);
@@ -61,7 +53,17 @@ export function useChat(sessionId) {
   // On mount: sync from backend history (source of truth)
   useEffect(() => {
   // Keep ref synced with active session
-  sessionRef.current = sessionId;
+  sessionRef.current = activeSessionId;
+
+  const saved = loadSavedMessages(activeSessionId);
+
+  if (saved && saved.length > 0) {
+    setMessages(saved);
+  } else {
+    setMessages([WELCOME_MESSAGE]);
+  }
+
+  if (!activeSessionId) return;
 
   const syncHistory = async () => {
     try {
@@ -97,7 +99,7 @@ export function useChat(sessionId) {
   };
 
   syncHistory();
-}, [sessionId]);
+}, [activeSessionId]);
 
   // Send a new message
   const sendMessage = useCallback(
@@ -136,10 +138,16 @@ export function useChat(sessionId) {
     [isLoading]
   );
 
-  // Clear or reset the conversation
-  const clearChat = useCallback(() => {
+  // Clear or reset the conversation - either specific session or current active session
+  const clearChat = useCallback((sessionIdToClear = null) => {
+    const targetSession =
+      sessionIdToClear || sessionRef.current;
+
     setMessages([WELCOME_MESSAGE]);
-    localStorage.removeItem(`messages_${sessionRef.current}`);
+
+    localStorage.removeItem(
+      `messages_${targetSession}`
+    );
   }, []);
 
   const clearError = useCallback(() => setError(null), []);

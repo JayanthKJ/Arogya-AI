@@ -12,7 +12,7 @@ import ChatInput from "./components/ChatInput";
 import Auth from "./components/Auth";
 
 import { useChat } from "./hooks/useChat";
-import { authAPI } from "./services/api";
+import { authAPI, chatAPI } from "./services/api";
 
 function App() {
   // ─────────────────────────────────────────────
@@ -30,36 +30,45 @@ function App() {
   // ─────────────────────────────────────────────
   // Session state
   // ─────────────────────────────────────────────
-  const initialSessionId =
-    localStorage.getItem("sessionId") || crypto.randomUUID();
+  const [activeSessionId, setActiveSessionId] = useState(
+    localStorage.getItem("activeSessionId") || null
+  );
 
-  localStorage.setItem("sessionId", initialSessionId);
+  const [sessions, setSessions] = useState([]);
 
-  const [sessionId, setSessionId] = useState(initialSessionId);
-
-  const [sessions, setSessions] = useState(() => {
-    const saved = localStorage.getItem("sessions");
-
-    if (saved) {
-      return JSON.parse(saved);
-    }
-
-    return [
-      {
-        id: initialSessionId,
-        title: "New Conversation",
-        createdAt: new Date().toISOString(),
-      },
-    ];
-  });
-
-  // Add sessions persistence effect
   useEffect(() => {
-    localStorage.setItem(
-      "sessions",
-      JSON.stringify(sessions)
-    );
-  }, [sessions]);
+    const loadSessions = async () => {
+      try {
+      const backendSessions = await chatAPI.getSessions();
+
+        const normalized = backendSessions.map((session) => ({
+          id: session.session_id,
+          title: session.title,
+          createdAt: session.last_updated,
+        }));
+
+        setSessions(normalized);
+
+        // Restore last active session if possible
+        if (!activeSessionId && normalized.length > 0) {
+          setActiveSessionId(normalized[0].id);
+
+          localStorage.setItem(
+            "activeSessionId",
+            normalized[0].id
+          );
+        }
+      } catch (err) {
+        console.error("[App] Failed to load sessions:", err);
+      }
+
+    };
+
+    if (isAuthenticated) {
+      loadSessions();
+    }
+  }, [isAuthenticated, activeSessionId]);
+
 
   // ─────────────────────────────────────────────
   // Chat hook
@@ -71,12 +80,14 @@ function App() {
     sendMessage,
     clearError,
     clearChat,
-  } = useChat(sessionId);
+  } = useChat(activeSessionId);
 
   // ─────────────────────────────────────────────
   // Auth handlers
   // ─────────────────────────────────────────────
   const handleAuth = async (email, password, isLogin) => {
+    localStorage.removeItem("activeSessionId"); // to remove old user session
+
     if (isLogin) {
       await authAPI.login(email, password);
     } else {
@@ -88,27 +99,19 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Remove token
     authAPI.logout();
 
+    // Clear persisted storage
     localStorage.removeItem("sessions");
-    localStorage.removeItem("sessionId");
+    localStorage.removeItem("activeSessionId");
 
+    // Reset frontend state
+    setSessions([]);
+    setActiveSessionId(null);
+
+    // Reset auth state
     setIsAuthenticated(false);
-
-    const freshSessionId = crypto.randomUUID();
-
-    localStorage.setItem("sessionId", freshSessionId);
-
-    const freshSessions = [
-      {
-        id: freshSessionId,
-        title: "New Conversation",
-        createdAt: new Date().toISOString(),
-      },
-    ];
-
-    setSessionId(freshSessionId);
-    setSessions(freshSessions);
   };
 
   // ─────────────────────────────────────────────
@@ -123,25 +126,25 @@ function App() {
       createdAt: new Date().toISOString(),
     };
 
-    setSessions((prev) => {
-      const exists = prev.some(
-        (session) => session.id === newSessionId
-      );
+    setSessions((prev) => [newSession, ...prev]);
 
-      if (exists) return prev;
+    setActiveSessionId(newSessionId);
 
-      return [newSession, ...prev];
-    });
+    localStorage.setItem(
+      "activeSessionId",
+      newSessionId
+    );
 
-    setSessionId(newSessionId);
-
-    localStorage.setItem("sessionId", newSessionId);
-
-    clearChat();
+    clearChat(newSessionId);
   };
 
   const handleSessionClick = (id) => {
-    setSessionId(id);
+    setActiveSessionId(id);
+
+    localStorage.setItem(
+      "activeSessionId",
+      id
+    );
 
     // Close sidebar on mobile after selection
     setSidebarOpen(false);
@@ -161,7 +164,7 @@ function App() {
 
     setSessions((prev) =>
       prev.map((session) =>
-        session.id === sessionId &&
+        session.id === activeSessionId &&
         session.title === "New Conversation"
           ? {
               ...session,
@@ -173,7 +176,7 @@ function App() {
           : session
       )
     );
-  }, [messages, sessionId]);
+  }, [messages, activeSessionId]);
 
   // ─────────────────────────────────────────────
   // Auth gate
@@ -192,7 +195,7 @@ function App() {
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         sessions={sessions}
-        activeSessionId={sessionId}
+        activeSessionId={activeSessionId}
         onNewChat={handleNewChat}
         onSessionClick={handleSessionClick}
       />

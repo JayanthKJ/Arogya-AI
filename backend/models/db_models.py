@@ -6,11 +6,13 @@ from typing import Optional
 
 from sqlmodel import SQLModel, Field
 
-from enum import Enum
+# from enum import Enum
+#
+# class RoleEnum(str, Enum):
+#     user = "user"
+#     assistant = "assistant"
 
-class RoleEnum(str, Enum):
-    user = "user"
-    assistant = "assistant"
+# role: str = Field(default="user")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,6 +49,6 @@ class ChatMessage(SQLModel, table=True):
     id: str = Field(default_factory=_generate_uuid, primary_key=True)
     session_id: str = Field(index=True, nullable=False)
     user_id: str = Field(index=True, nullable=False)          # FK-style, no hard FK constraint
-    role: RoleEnum = Field(nullable=False)                          # "user" | "assistant"
+    role: str = Field(default="user", nullable=False)                          # "user" | "assistant"
     content: str = Field(nullable=False)
     created_at: datetime = Field(default_factory=_now, nullable=False)

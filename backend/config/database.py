@@ -17,6 +17,8 @@ engine = create_engine(
     DATABASE_URL,
     echo=settings.DEBUG,
     connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_recycle=300,
 )
 
 
