@@ -23,8 +23,17 @@ engine = create_engine(
 
 
 def get_session():
-    with Session(engine) as session:
+     session= Session(engine)
+
+     try:
         yield session
+
+     except Exception:
+         session.rollback()
+         raise
+
+     finally:
+         session.close()
 
 
 def init_db():
