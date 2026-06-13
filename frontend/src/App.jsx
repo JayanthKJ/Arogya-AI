@@ -82,6 +82,33 @@ function App() {
     clearChat,
   } = useChat(activeSessionId);
 
+  const handleSendMessage = async (message) => {
+    let sessionId = activeSessionId;
+
+    // Auto-create session if none exists
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+
+      const newSession = {
+        id: sessionId,
+        title: "New Conversation",
+        createdAt: new Date().toISOString(),
+      };
+
+      setSessions((prev) => [newSession, ...prev]);
+
+      setActiveSessionId(sessionId);
+
+      localStorage.setItem(
+        "activeSessionId",
+        sessionId
+      );
+    }
+
+    // Send using guaranteed valid session
+    await sendMessage(message, sessionId);
+  };
+
   // ─────────────────────────────────────────────
   // Auth handlers
   // ─────────────────────────────────────────────
@@ -212,11 +239,11 @@ function App() {
           isLoading={isLoading}
           error={error}
           onClearError={clearError}
-          onChipClick={sendMessage}
+          onChipClick={handleSendMessage}
         />
 
         <ChatInput
-          onSend={sendMessage}
+          onSend={handleSendMessage}
           isLoading={isLoading}
         />
       </div>

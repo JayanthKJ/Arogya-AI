@@ -103,7 +103,7 @@ export function useChat(activeSessionId) {
 
   // Send a new message
   const sendMessage = useCallback(
-    async (text) => {
+    async (text, overrideSessionId = null) => {
       const trimmed = text?.trim();
       if (!trimmed || isLoading) return;
 
@@ -121,7 +121,13 @@ export function useChat(activeSessionId) {
 
       try {
         // Send directly as the latest message
-        const response = await chatAPI.sendMessage(trimmed, sessionRef.current);
+        const finalSessionId = overrideSessionId || sessionRef.current;
+        
+        const response = await chatAPI.sendMessage(
+          trimmed,
+          finalSessionId
+        )
+        
         const reply = response.reply || response.message || response.content || "No response"
         const aiMessage = createMessage("ai", reply);
         setMessages((prev) => [...prev, aiMessage]);
