@@ -1,12 +1,3 @@
-/**
- * Header.jsx
- * Top bar: mobile menu toggle, app identity, status indicator,
- * language toggle, and an emergency shortcut button.
- *
- * Props:
- *   onMenuClick — () => void  (toggles mobile sidebar)
- */
-
 import { APP_NAME } from "../constants";
 
 function HeartIcon() {
@@ -15,7 +6,7 @@ function HeartIcon() {
       viewBox="0 0 24 24"
       className="w-5 h-5"
       fill="none"
-      stroke="#86efac"
+      stroke="#5eead4" /* teal-300 */
       strokeWidth={2}
       aria-hidden="true"
     >
@@ -44,12 +35,12 @@ function MenuIcon() {
 
 export default function Header({ onMenuClick, onLogout }) {
   return (
-    <header className="flex items-center justify-between px-5 py-4 bg-white border-b-2 border-green-100 flex-shrink-0">
+    <header className="flex items-center justify-between px-4 md:px-6 py-3.5 bg-white border-b border-gray-100 flex-shrink-0 shadow-sm z-10 relative">
       
       {/* ── Left: menu toggle + identity ── */}
       <div className="flex items-center gap-3">
         <button
-          className="md:hidden p-1 text-green-800 rounded-lg hover:bg-green-50 transition-colors"
+          className="md:hidden p-1.5 text-teal-800 rounded-lg hover:bg-teal-50 transition-colors"
           onClick={onMenuClick}
           aria-label="Open sidebar menu"
         >
@@ -58,7 +49,7 @@ export default function Header({ onMenuClick, onLogout }) {
 
         {/* Avatar */}
         <div
-          className="w-11 h-11 rounded-full bg-green-900 flex items-center justify-center flex-shrink-0"
+          className="w-10 h-10 rounded-xl bg-teal-800 flex items-center justify-center flex-shrink-0 shadow-sm"
           aria-hidden="true"
         >
           <HeartIcon />
@@ -67,18 +58,18 @@ export default function Header({ onMenuClick, onLogout }) {
         {/* Name + status */}
         <div>
           <h1
-            className="font-bold text-green-900 leading-tight"
-            style={{ fontSize: "22px" }}
+            className="font-bold text-gray-800 leading-tight tracking-wide"
+            style={{ fontSize: "18px" }}
           >
             {APP_NAME}
           </h1>
 
           <p
-            className="text-green-600 font-semibold flex items-center gap-1"
-            style={{ fontSize: "14px" }}
+            className="text-teal-600 font-medium flex items-center gap-1.5"
+            style={{ fontSize: "12px" }}
           >
             <span
-              className="inline-block w-2 h-2 rounded-full bg-green-500"
+              className="inline-block w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.8)]"
               aria-hidden="true"
             />
             Online · Ready to Help
@@ -87,13 +78,13 @@ export default function Header({ onMenuClick, onLogout }) {
       </div>
 
       {/* ── Right: actions ── */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         
         {/* Hindi toggle */}
         <button
-          className="hidden sm:block border-2 border-green-200 rounded-xl px-4 py-2
-                     text-green-700 font-semibold hover:bg-green-50 transition-colors"
-          style={{ fontSize: "16px" }}
+          className="hidden sm:block border border-gray-200 rounded-xl px-4 py-2
+                     text-gray-600 font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+          style={{ fontSize: "14px" }}
           aria-label="Switch language to Hindi"
         >
           हिंदी
@@ -101,21 +92,21 @@ export default function Header({ onMenuClick, onLogout }) {
 
         {/* Emergency */}
         <button
-          className="border-2 border-red-200 rounded-xl px-4 py-2
-                     text-red-600 font-semibold hover:bg-red-50 transition-colors"
-          style={{ fontSize: "16px" }}
+          className="border border-red-100 bg-red-50/50 rounded-xl px-3 sm:px-4 py-2
+                     text-red-600 font-semibold hover:bg-red-50 hover:border-red-200 transition-all shadow-sm"
+          style={{ fontSize: "14px" }}
           aria-label="Emergency contact"
         >
-          📞 Emergency
+          📞 <span className="hidden sm:inline ml-1">Emergency</span>
         </button>
 
         {/* Logout */}
         {onLogout && (
           <button
             onClick={onLogout}
-            className="border-2 border-gray-200 rounded-xl px-4 py-2
-                       text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
-            style={{ fontSize: "16px" }}
+            className="border border-gray-200 rounded-xl px-3 sm:px-4 py-2
+                       text-gray-600 font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+            style={{ fontSize: "14px" }}
             aria-label="Logout"
           >
             Logout

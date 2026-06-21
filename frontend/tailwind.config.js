@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Nunito", "Segoe UI", "system-ui", "sans-serif"],
+        sans: ["Inter", "Segoe UI", "system-ui", "sans-serif"],
       },
     },
   },
