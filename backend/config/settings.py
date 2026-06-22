@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed frontend origins.
     # Example: "http://localhost:3000,https://yourapp.com"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # ── LLM provider ─────────────────────────────────────────────
     # Supported values: "openai" | "anthropic" | "mock"
@@ -43,6 +44,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str  # e.g. openssl rand -hex 32
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    # ── Email Settings ────────────────────────────────────────────
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "noreply@arogya.ai"
 
     # ── LLM generation parameters ─────────────────────────────────
     LLM_MAX_TOKENS: int = 512

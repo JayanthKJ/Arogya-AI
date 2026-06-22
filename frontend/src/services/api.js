@@ -49,6 +49,36 @@ export const authAPI = {
     return response.json();
   },
 
+  async forgotPassword(email) {
+    const response = await fetch(`${BASE_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || "Forgot password failed");
+    }
+
+    return response.json();
+  },
+
+  async resetPassword(token, new_password) {
+    const response = await fetch(`${BASE_URL}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, new_password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || "Reset password failed");
+    }
+
+    return response.json();
+  },
+
   async login(email, password) {
     const response = await fetch(`${BASE_URL}/auth/login`, {
       method: "POST",

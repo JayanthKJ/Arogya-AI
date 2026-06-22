@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 export default function Auth({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -7,9 +8,27 @@ export default function Auth({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const validatePassword = (pwd) => {
+    if (pwd.length < 8) return "Password must be at least 8 characters long.";
+    if (!/[A-Z]/.test(pwd)) return "Password must contain at least one uppercase letter.";
+    if (!/[a-z]/.test(pwd)) return "Password must contain at least one lowercase letter.";
+    if (!/\d/.test(pwd)) return "Password must contain at least one number.";
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) return "Password must contain at least one special character.";
+    return null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!isLogin) {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        setError(passwordError);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -72,13 +91,22 @@ export default function Auth({ onLogin }) {
           </button>
         </form>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center space-y-3">
           <button
+            type="button"
             onClick={() => setIsLogin(!isLogin)}
-            className="text-teal-600 hover:text-teal-700 text-sm font-semibold transition-colors"
+            className="block w-full text-teal-600 hover:text-teal-700 text-sm font-semibold transition-colors"
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Login'}
           </button>
+          
+          {isLogin && (
+            <div className="text-sm font-semibold">
+              <Link to="/forgot-password" className="text-gray-500 hover:text-teal-600 transition-colors">
+                Forgot Password?
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

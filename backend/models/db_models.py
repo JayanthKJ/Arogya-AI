@@ -52,3 +52,29 @@ class ChatMessage(SQLModel, table=True):
     role: str = Field(default="user", nullable=False)                          # "user" | "assistant"
     content: str = Field(nullable=False)
     created_at: datetime = Field(default_factory=_now, nullable=False)
+
+# ---------------------------------------------------------------------------
+# PasswordResetToken
+# ---------------------------------------------------------------------------
+
+class PasswordResetToken(SQLModel, table=True):
+    __tablename__ = "password_reset_tokens"
+
+    id: str = Field(default_factory=_generate_uuid, primary_key=True)
+    user_id: str = Field(foreign_key = "users.id", index=True, nullable=False)
+    token_hash: str = Field(nullable=False)
+    expires_at: datetime = Field(nullable=False)
+    created_at: datetime = Field(default_factory=_now, nullable=False)
+
+# ---------------------------------------------------------------------------
+# Session
+# ---------------------------------------------------------------------------
+
+class UserSession(SQLModel, table=True):
+    __tablename__ = "sessions"
+
+    id: str = Field(default_factory=_generate_uuid, primary_key=True)
+    user_id: str = Field(foreign_key = "users.id", index=True, nullable = False)
+    created_at: datetime = Field(default_factory = _now, nullable = False)
+    expires_at: datetime = Field(nullable = False)
+    revoked_at: Optional[datetime] = Field(nullable = True)
