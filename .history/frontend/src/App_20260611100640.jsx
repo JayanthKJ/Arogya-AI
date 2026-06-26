@@ -1,0 +1,227 @@
+/**
+ * App.jsx — Root component
+ * Composes layout: Sidebar | Header + ChatWindow + ChatInput
+ * Wires everything through the useChat hook.
+ */
+
+import { useState, useEffect } from "react";
+import Sidebar from "./components/Sidebar";
+import Header from "./components/Header";
+import ChatWindow from "./components/ChatWindow";
+import ChatInput from "./components/ChatInput";
+import Auth from "./components/Auth";
+
+import { useChat } from "./hooks/useChat";
+import { authAPI, chatAPI } from "./services/api";
+
+function App() {
+  // ─────────────────────────────────────────────
+  // Auth state
+  // ─────────────────────────────────────────────
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    authAPI.isAuthenticated()
+  );
+
+  // ─────────────────────────────────────────────
+  // Sidebar mobile state
+  // ─────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // ─────────────────────────────────────────────
+  // Session state
+  // ─────────────────────────────────────────────
+  const [activeSessionId, setActiveSessionId] = useState(
+    localStorage.getItem("activeSessionId") || null
+  );
+
+  const [sessions, setSessions] = useState([]);
+
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+      const backendSessions = await chatAPI.getSessions();
+
+        const normalized = backendSessions.map((session) => ({
+          id: session.session_id,
+          title: session.title,
+          createdAt: session.last_updated,
+        }));
+
+        setSessions(normalized);
+
+        // Restore last active session if possible
+        if (!activeSessionId && normalized.length > 0) {
+          setActiveSessionId(normalized[0].id);
+
+          localStorage.setItem(
+            "activeSessionId",
+            normalized[0].id
+          );
+        }
+      } catch (err) {
+        console.error("[App] Failed to load sessions:", err);
+      }
+
+    };
+
+    if (isAuthenticated) {
+      loadSessions();
+    }
+  }, [isAuthenticated]);
+
+
+  // ─────────────────────────────────────────────
+  // Chat hook
+  // ─────────────────────────────────────────────
+  const {
+    messages,
+    isLoading,
+    error,
+    sendMessage,
+    clearError,
+    clearChat,
+  } = useChat(activeSessionId);
+
+  // ─────────────────────────────────────────────
+  // Auth handlers
+  // ─────────────────────────────────────────────
+  const handleAuth = async (email, password, isLogin) => {
+    localStorage.removeItem("activeSessionId"); // to remove old user session
+
+    if (isLogin) {
+      await authAPI.login(email, password);
+    } else {
+      await authAPI.signup(email, password);
+      await authAPI.login(email, password);
+    }
+
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    // Remove token
+    authAPI.logout();
+
+    // Clear persisted storage
+    localStorage.removeItem("sessions");
+    localStorage.removeItem("activeSessionId");
+
+    // Reset frontend state
+    setSessions([]);
+    setActiveSessionId(null);
+
+    // Reset auth state
+    setIsAuthenticated(false);
+  };
+
+  // ─────────────────────────────────────────────
+  // Session handlers
+  // ─────────────────────────────────────────────
+  const handleNewChat = () => {
+    const newSessionId = crypto.randomUUID();
+
+    const newSession = {
+      id: newSessionId,
+      title: "New Conversation",
+      createdAt: new Date().toISOString(),
+    };
+
+    setSessions((prev) => [newSession, ...prev]);
+
+    setActiveSessionId(newSessionId);
+
+    localStorage.setItem(
+      "activeSessionId",
+      newSessionId
+    );
+
+    clearChat();
+  };
+
+  const handleSessionClick = (id) => {
+    setActiveSessionId(id);
+
+    localStorage.setItem(
+      "activeSessionId",
+      id
+    );
+
+    // Close sidebar on mobile after selection
+    setSidebarOpen(false);
+  };
+
+  // ─────────────────────────────────────────────
+  // Auto-update session title from first user msg
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    const firstUserMessage = messages.find(
+      (msg) => msg.role === "user"
+    );
+
+    if (!firstUserMessage) return;
+
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === activeSessionId &&
+        session.title === "New Conversation"
+          ? {
+              ...session,
+              title:
+                firstUserMessage.text.length > 30
+                  ? firstUserMessage.text.slice(0, 30) + "..."
+                  : firstUserMessage.text,
+            }
+          : session
+      )
+    );
+  }, [messages, activeSessionId]);
+
+  // ─────────────────────────────────────────────
+  // Auth gate
+  // ─────────────────────────────────────────────
+  if (!isAuthenticated) {
+    return <Auth onLogin={handleAuth} />;
+  }
+
+  // ─────────────────────────────────────────────
+  // Main layout
+  // ─────────────────────────────────────────────
+  return (
+    <div className="flex h-screen max-h-screen overflow-hidden bg-gray-50">
+      {/* ── Sidebar ───────────────────────── */}
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onNewChat={handleNewChat}
+        onSessionClick={handleSessionClick}
+      />
+
+      {/* ── Main column ───────────────────── */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <Header
+          onMenuClick={() => setSidebarOpen(true)}
+          onLogout={handleLogout}
+        />
+
+        <ChatWindow
+          messages={messages}
+          isLoading={isLoading}
+          error={error}
+          onClearError={clearError}
+          onChipClick={sendMessage}
+        />
+
+        <ChatInput
+          onSend={sendMessage}
+          isLoading={isLoading}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default App;
