@@ -1,6 +1,15 @@
-# Arogya AI — FastAPI Backend
+# Arogya AI — Backend
 
-Production-grade Python backend for the Arogya AI health assistant.
+Production-grade Python FastAPI backend for the Arogya AI health assistant.
+It provides symptom extraction, context-aware prompting, safe AI responses, and a secure user authentication system.
+
+## Tech Stack
+- **FastAPI** (Web framework)
+- **SQLModel & SQLAlchemy** (ORM and Database Models)
+- **PostgreSQL** (Database, via psycopg2)
+- **Google GenAI / OpenAI / Anthropic** (LLM Integrations)
+- **PyJWT & Passlib (Bcrypt)** (For Authentication and Password Hashing)
+- **Pytest** (For testing)
 
 ## Folder Structure
 
@@ -8,50 +17,38 @@ Production-grade Python backend for the Arogya AI health assistant.
 backend/
 ├── main.py                     # App factory, middleware, router registration
 ├── requirements.txt
-├── .env.example                # Copy to .env and fill in your values
+├── .env.example                # Copy to .env and fill in values
 │
 ├── config/
-│   └── settings.py             # Pydantic BaseSettings — all config from env
+│   ├── settings.py             # Pydantic BaseSettings config
+│   └── database.py             # Database engine and session initialization
 │
 ├── models/
-│   └── schemas.py              # All Pydantic request/response/DTO models
+│   ├── db_models.py            # SQLModel database tables (User, ChatHistory, etc.)
+│   └── schemas.py              # Pydantic validation schemas (Request/Response DTOs)
 │
 ├── routes/
-│   └── chat.py                 # POST /chat  +  GET /chat/health
+│   ├── chat.py                 # Chat endpoints
+│   └── auth.py                 # Auth endpoints (Login, Register, Password Reset)
 │
 ├── services/
-│   ├── ai_service.py           # Orchestrates the full pipeline
+│   ├── ai_service.py           # Orchestrates the AI pipeline
 │   ├── symptom_extractor.py    # Rule-based NLP: symptoms, duration, body parts
-│   ├── prompt_builder.py       # Builds system + user prompts for the LLM
-│   └── safety_filter.py        # Hard-block + soft-rewrite post-filter
+│   ├── prompt_builder.py       # Builds prompts for the LLM
+│   └── safety_filter.py        # Post-filter for AI responses
 │
 └── tests/
-    └── test_backend.py         # Unit + integration tests (pytest)
+    └── test_backend.py         # Unit and integration tests (pytest)
 ```
 
-## Request/Response Flow
+## Authentication & Database
 
-```
-POST /chat  { "message": "I have fever for 3 days" }
-     │
-     ▼
-[routes/chat.py]          — validates input, delegates to AIService
-     │
-     ▼
-[SymptomExtractor]        — { symptoms: ["fever"], duration: "3 days" }
-     │
-     ▼
-[PromptBuilder]           — system prompt + enriched user prompt
-     │
-     ▼
-[AIService._call_llm()]   — OpenAI / Anthropic / Mock
-     │
-     ▼
-[SafetyFilter]            — hard-block dangerous phrases, soft-rewrite hedges
-     │
-     ▼
-{ "reply": "...", "extracted": {...}, "safe": true }
-```
+The backend includes a full authentication system using JWT tokens:
+- `POST /auth/register`: Create a new user account
+- `POST /auth/login`: Authenticate and receive a JWT token
+- Password resets and email functionality are integrated (using Resend).
+
+Ensure you have configured `DATABASE_URL` and `SECRET_KEY` in your environment along with your LLM configuration (e.g. `GEMINI_API_KEY`).
 
 ## Quick Start
 
@@ -65,7 +62,7 @@ pip install -r requirements.txt
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env — set LLM_PROVIDER=mock for local dev (no API key needed)
+# Edit .env with your DATABASE_URL, SECRET_KEY, GEMINI_API_KEY, etc.
 
 # 4. Run the development server
 uvicorn main:app --reload --port 8000
@@ -73,60 +70,3 @@ uvicorn main:app --reload --port 8000
 # 5. Open the interactive API docs
 # http://localhost:8000/docs  (only visible when DEBUG=true)
 ```
-
-## Environment Variables
-
-| Variable             | Default                  | Description                              |
-|----------------------|--------------------------|------------------------------------------|
-| `LLM_PROVIDER`       | `mock`                   | `mock` \| `openai` \| `anthropic`        |
-| `OPENAI_API_KEY`     | —                        | Required when `LLM_PROVIDER=openai`      |
-| `OPENAI_MODEL`       | `gpt-4o-mini`            | OpenAI model name                        |
-| `ANTHROPIC_API_KEY`  | —                        | Required when `LLM_PROVIDER=anthropic`   |
-| `ANTHROPIC_MODEL`    | `claude-3-5-haiku-...`   | Anthropic model name                     |
-| `LLM_MAX_TOKENS`     | `512`                    | Max tokens in LLM reply                  |
-| `LLM_TEMPERATURE`    | `0.4`                    | LLM temperature (lower = safer)          |
-| `CORS_ORIGINS`       | `http://localhost:3000`  | Comma-separated allowed frontend origins |
-| `DEBUG`              | `false`                  | Enables `/docs` and verbose errors       |
-| `LOG_LEVEL`          | `INFO`                   | `DEBUG` \| `INFO` \| `WARNING`           |
-
-## Running Tests
-
-```bash
-pytest tests/ -v
-```
-
-Expected output: all 26 tests pass against the mock provider.
-
-## Adding a New LLM Provider
-
-1. Add credentials to `.env.example` and `config/settings.py`
-2. Add an `elif provider == "yourprovider":` branch in `ai_service.py`
-3. Install the provider's SDK in `requirements.txt`
-
-No other files need to change.
-
-## API Reference
-
-### `POST /chat`
-
-**Request**
-```json
-{ "message": "I have fever and headache for 3 days" }
-```
-
-**Response**
-```json
-{
-  "reply": "Thank you for sharing...",
-  "extracted": {
-    "symptoms": ["fever", "headache"],
-    "duration": "3 days",
-    "body_parts": [],
-    "severity_hints": []
-  },
-  "safe": true
-}
-```
-
-### `GET /health`
-Returns app name, version, and current LLM provider.
