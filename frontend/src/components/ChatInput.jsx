@@ -1,22 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-
-function SendIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="w-5 h-5"
-      fill="none"
-      stroke="white"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="22" y1="2" x2="11" y2="13" />
-      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-    </svg>
-  );
-}
+import { Send } from "lucide-react";
 
 export default function ChatInput({ onSend, isLoading }) {
   const [text, setText] = useState("");
@@ -33,6 +16,43 @@ export default function ChatInput({ onSend, isLoading }) {
   // Focus input on mount
   useEffect(() => {
     textareaRef.current?.focus();
+  }, []);
+
+  // Global keyboard listener to automatically focus input on typing
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      // Ignore if using modifier keys
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      
+      // Ignore if it's not a single printable character (e.g., 'Enter', 'Backspace', 'Escape')
+      if (e.key.length !== 1) return;
+
+      // Ignore if user is already focused on an input/textarea/select or contenteditable
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+         activeEl.tagName === "TEXTAREA" ||
+         activeEl.tagName === "SELECT" ||
+         activeEl.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Ignore if user is highlighting/selecting text
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim() !== "") return;
+
+      // Focus the textarea and append the character
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        setText((prev) => prev + e.key);
+        e.preventDefault(); // Prevent default to avoid double-typing or page scroll
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
   const canSend = text.trim().length > 0 && !isLoading;
@@ -53,15 +73,15 @@ export default function ChatInput({ onSend, isLoading }) {
   }
 
   return (
-    <div className="flex-shrink-0 bg-white border-t border-gray-100 px-4 md:px-8 pt-4 pb-6 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)] relative z-10">
+    <div className="flex-shrink-0 bg-surface border-t border-border px-4 md:px-8 pt-4 pb-6 shadow-floating relative z-10">
       {/* ── Input row ── */}
       <div
         className={[
-          "flex items-end gap-3 bg-gray-50/80 rounded-[20px] px-4 md:px-5 py-3 mx-auto max-w-4xl",
-          "border shadow-sm transition-all duration-200 ease-in-out",
+          "flex items-end gap-3 bg-surface rounded-2xl px-4 md:px-5 py-3 mx-auto max-w-4xl",
+          "border transition-all duration-200 ease-in-out shadow-sm hover:shadow-md hover:-translate-y-[1px]",
           isLoading
-            ? "border-gray-200 opacity-80"
-            : "border-gray-200 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100 focus-within:bg-white",
+            ? "border-border opacity-80"
+            : "border-border focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10",
         ].join(" ")}
       >
         <textarea
@@ -73,8 +93,8 @@ export default function ChatInput({ onSend, isLoading }) {
           disabled={isLoading}
           placeholder="Type your health question here…"
           aria-label="Health question input"
-          className="flex-1 bg-transparent resize-none outline-none text-gray-800
-                     placeholder-gray-400 font-medium leading-relaxed my-auto"
+          className="flex-1 bg-transparent resize-none outline-none text-foreground
+                     placeholder:text-muted font-medium leading-relaxed my-auto"
           style={{ fontSize: "16px", minHeight: "24px", maxHeight: "160px" }}
         />
 
@@ -86,16 +106,16 @@ export default function ChatInput({ onSend, isLoading }) {
           className={[
             "flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200",
             canSend
-              ? "bg-teal-600 hover:bg-teal-500 shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
+              ? "bg-primary hover:bg-primary-hover text-primary-foreground shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
               : isLoading 
-              ? "bg-teal-50 cursor-not-allowed" 
-              : "bg-gray-200 text-gray-400 cursor-not-allowed",
+              ? "bg-muted/10 text-primary cursor-not-allowed" 
+              : "bg-muted/10 text-muted/60 cursor-not-allowed",
           ].join(" ")}
         >
           {isLoading ? (
             // Spinner
             <svg
-              className="w-5 h-5 animate-spin text-teal-600"
+              className="w-5 h-5 animate-spin"
               viewBox="0 0 24 24"
               fill="none"
               aria-label="Sending…"
@@ -112,7 +132,7 @@ export default function ChatInput({ onSend, isLoading }) {
               />
             </svg>
           ) : (
-            <SendIcon />
+            <Send size={20} />
           )}
         </button>
       </div>
@@ -120,13 +140,13 @@ export default function ChatInput({ onSend, isLoading }) {
       {/* ── Hint ── */}
       <div className="hidden md:block">
         <p
-          className="text-center text-gray-400 font-medium mt-3 tracking-wide"
+          className="text-center text-muted font-medium mt-3 tracking-wide"
           style={{ fontSize: "12px" }}
           aria-hidden="true"
         >
-          Press <kbd className="bg-gray-100 px-1.5 py-0.5 rounded-md border border-gray-200">Enter</kbd> to send
+          Press <kbd className="bg-muted/10 px-1.5 py-0.5 rounded border border-border">Enter</kbd> to send
           &nbsp;·&nbsp;
-          <kbd className="bg-gray-100 px-1.5 py-0.5 rounded-md border border-gray-200">Shift + Enter</kbd> for new line
+          <kbd className="bg-muted/10 px-1.5 py-0.5 rounded border border-border">Shift + Enter</kbd> for new line
         </p>
       </div>
     </div>

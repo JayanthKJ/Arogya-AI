@@ -36,7 +36,7 @@ export function useChat(activeSessionId) {
 
   const [messages, setMessages] = useState(() => {
     const saved = loadSavedMessages(sessionRef.current);
-    return saved && saved.length > 0 ? saved : [WELCOME_MESSAGE];
+    return saved && saved.length > 0 ? saved : [];
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -60,7 +60,7 @@ export function useChat(activeSessionId) {
   if (saved && saved.length > 0) {
     setMessages(saved);
   } else {
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([]);
   }
 
   if (!activeSessionId) return;
@@ -88,8 +88,8 @@ export function useChat(activeSessionId) {
 
         setMessages(normalized);
       } else {
-        // Empty session → show welcome message
-        setMessages([WELCOME_MESSAGE]);
+        // Empty session → show welcome banner
+        setMessages([]);
       }
     } catch (err) {
       console.error("[useChat] syncHistory error:", err);
@@ -149,7 +149,7 @@ export function useChat(activeSessionId) {
     const targetSession =
       sessionIdToClear || sessionRef.current;
 
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([]);
 
     localStorage.removeItem(
       `messages_${targetSession}`

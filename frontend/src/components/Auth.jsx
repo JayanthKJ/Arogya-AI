@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Leaf } from 'lucide-react';
 
 export default function Auth({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -41,43 +42,43 @@ export default function Auth({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center p-4">
-      <div className="bg-white rounded-[24px] shadow-lg border border-gray-100 p-8 sm:p-10 w-full max-w-md transition-all duration-300">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="bg-surface rounded-xl shadow-card border border-border p-8 sm:p-10 w-full max-w-md transition-all duration-200">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-teal-800 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm">
-            <span className="text-3xl">🌿</span>
+          <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mx-auto mb-5 shadow-sm text-primary-foreground">
+            <Leaf size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-gray-800 tracking-wide">Arogya AI</h1>
-          <p className="text-teal-600 font-medium text-sm mt-1.5 tracking-wider">HEALTH COMPANION</p>
+          <h1 className="text-2xl font-bold text-foreground tracking-wide">Arogya AI</h1>
+          <p className="text-muted font-medium text-sm mt-1.5 tracking-wider">HEALTH COMPANION</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 tracking-wide">Email</label>
+            <label className="block text-sm font-semibold text-foreground mb-1.5 tracking-wide">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-200 bg-gray-50/50 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-400 outline-none transition-all duration-200"
+              className="w-full px-4 py-3 border border-border bg-background rounded-lg focus:bg-surface focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all duration-200"
               placeholder="you@example.com"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 tracking-wide">Password</label>
+            <label className="block text-sm font-semibold text-foreground mb-1.5 tracking-wide">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-200 bg-gray-50/50 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-400 outline-none transition-all duration-200"
+              className="w-full px-4 py-3 border border-border bg-background rounded-lg focus:bg-surface focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all duration-200"
               placeholder="••••••••"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm font-medium animate-fade-in-up">
+            <div className="bg-danger/10 border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm font-medium animate-fade-in-up">
               {error}
             </div>
           )}
@@ -85,7 +86,7 @@ export default function Auth({ onLogin }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-teal-700 hover:bg-teal-600 text-white font-semibold py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed mt-2 tracking-wide"
+            className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3.5 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md hover:-translate-y-[1px] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed mt-2 tracking-wide"
           >
             {loading ? 'Please wait...' : isLogin ? 'Login' : 'Sign Up'}
           </button>
@@ -95,14 +96,14 @@ export default function Auth({ onLogin }) {
           <button
             type="button"
             onClick={() => setIsLogin(!isLogin)}
-            className="block w-full text-teal-600 hover:text-teal-700 text-sm font-semibold transition-colors"
+            className="block w-full text-muted hover:text-foreground text-sm font-semibold transition-colors"
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Login'}
           </button>
           
           {isLogin && (
             <div className="text-sm font-semibold">
-              <Link to="/forgot-password" className="text-gray-500 hover:text-teal-600 transition-colors">
+              <Link to="/forgot-password" className="text-muted hover:text-foreground transition-colors">
                 Forgot Password?
               </Link>
             </div>

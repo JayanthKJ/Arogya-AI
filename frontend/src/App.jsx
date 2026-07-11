@@ -5,8 +5,12 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ChatPage from "./pages/ChatPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
+import { useAppearance } from "./hooks/useAppearance";
 
 function App() {
+  // Initialize appearance settings at root level
+  useAppearance();
+
   return (
     <BrowserRouter>
       <Routes>

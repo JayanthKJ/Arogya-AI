@@ -1,15 +1,15 @@
 /**
  * MessageBubble.jsx
  * Renders a single chat message as a styled bubble.
- * - User messages: right-aligned, modern teal background
- * - AI messages:   left-aligned, white/cream background with soft shadow
+ * - User messages: right-aligned, primary background
+ * - AI messages: left-aligned, card background with soft shadow
  */
 
 function UserAvatar() {
   return (
     <div
-      className="w-9 h-9 rounded-xl bg-teal-100 flex items-center justify-center
-                 text-teal-800 font-bold flex-shrink-0 select-none shadow-sm border border-teal-200"
+      className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center
+                 text-primary font-bold flex-shrink-0 select-none border border-primary/20"
       style={{ fontSize: "14px" }}
       aria-hidden="true"
     >
@@ -21,8 +21,8 @@ function UserAvatar() {
 function AIAvatar() {
   return (
     <div
-      className="w-9 h-9 rounded-xl bg-teal-800 flex items-center justify-center
-                 text-teal-50 font-bold flex-shrink-0 select-none shadow-sm"
+      className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center
+                 text-primary-foreground font-bold flex-shrink-0 select-none shadow-sm"
       style={{ fontSize: "14px" }}
       aria-hidden="true"
     >
@@ -47,10 +47,10 @@ export default function MessageBubble({ message }) {
       <div className={`flex flex-col max-w-[85%] md:max-w-[70%] ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={[
-            "px-5 py-3.5 leading-relaxed shadow-sm transition-all duration-200",
+            "px-6 py-4 leading-relaxed shadow-sm transition-all duration-200",
             isUser
-              ? "bg-teal-700 text-white rounded-2xl rounded-br-[4px]"
-              : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-bl-[4px]",
+              ? "bg-primary text-primary-foreground rounded-2xl rounded-br-[4px]"
+              : "bg-card text-foreground border border-border rounded-2xl rounded-bl-[4px]",
           ].join(" ")}
           style={{ fontSize: "15px", letterSpacing: "0.2px" }}
         >
@@ -58,7 +58,7 @@ export default function MessageBubble({ message }) {
         </div>
 
         <p
-          className="text-gray-400/80 font-medium mt-1.5 px-1 tracking-wide"
+          className="text-muted font-medium mt-1.5 px-1 tracking-wide"
           style={{ fontSize: "11px" }}
           aria-hidden="true"
         >

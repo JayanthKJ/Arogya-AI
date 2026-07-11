@@ -2,15 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    /* Semantic Colors - Minimal, Calm, Professional */
+    --background: #f8fafc; /* slate-50 */
+    --surface: #ffffff;
+    --card: #ffffff;
+    
+    --foreground: #0f172a; /* slate-900 */
+    --muted: #64748b; /* slate-500 */
+    --border: #e2e8f0; /* slate-200 */
+    
+    /* Healthcare Teal/Emerald */
+    --primary: #0f766e; /* teal-700 */
+    --primary-hover: #0d9488; /* teal-600 */
+    --primary-foreground: #ffffff;
+    
+    --success: #10b981; /* emerald-500 */
+    --danger: #ef4444; /* red-500 */
+
+    /* Sidebar (Refined Dark Emerald) */
+    --sidebar-bg: #113f38; /* Warm muted dark emerald */
+    --sidebar-fg: #f8fafc;
+    --sidebar-muted: #84ccb9; /* Softer, legible muted text */
+    --sidebar-border: rgba(255, 255, 255, 0.08);
+    --sidebar-accent: rgba(255, 255, 255, 0.12);
+    --sidebar-accent-fg: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.06);
+
+    /* Typography */
+    --font-primary: 'Inter', 'Geist', system-ui, sans-serif;
+  }
+
+  .dark {
+    --background: #0D1514;
+    --surface: #121A1F;
+    --card: #18242A;
+    
+    --foreground: #F8FAFC;
+    --muted: #94A3B8;
+    --border: #1E2D36;
+    
+    --primary: #2BBE9A;
+    --primary-hover: #1FA986;
+    --primary-foreground: #022c22;
+    
+    --success: #10b981;
+    --danger: #ef4444;
+
+    /* Sidebar - deeper for dark mode */
+    --sidebar-bg: #0B2E2A;
+    --sidebar-fg: #F8FAFC;
+    --sidebar-muted: #84ccb9;
+    --sidebar-border: rgba(255, 255, 255, 0.05);
+    --sidebar-accent: rgba(255, 255, 255, 0.08);
+    --sidebar-accent-fg: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.04);
+  }
+}
+
 /* ── Base reset ── */
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
+/* Global color transition for theme switching with 0 specificity so Tailwind classes override */
+:where(*, *::before, *::after) {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 body {
   margin: 0;
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 /* ── Custom scrollbar ── */
@@ -21,16 +89,16 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #bbf7d0;
+  background: var(--border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #86efac;
+  background: var(--muted);
 }
 
 /* ── Accessibility: focus ring ── */
 :focus-visible {
-  outline: 3px solid #16a34a;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: 6px;
 }
