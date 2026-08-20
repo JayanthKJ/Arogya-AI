@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import ChatWindow from "../components/ChatWindow";
@@ -90,12 +90,6 @@ export default function ChatPage() {
     await sendMessage(message, currentSessionId);
   };
 
-  const handleLogout = () => {
-    authAPI.logout();
-    localStorage.removeItem("lastSessionId");
-    navigate('/login', { replace: true });
-  };
-
   const handleNewChat = () => {
     const newSessionId = crypto.randomUUID();
     navigate(`/chat/${newSessionId}`);
@@ -140,7 +134,6 @@ export default function ChatPage() {
       <div className="flex flex-col flex-1 overflow-hidden">
         <Header
           onMenuClick={() => setSidebarOpen(true)}
-          onLogout={handleLogout}
         />
         <ChatWindow
           messages={messages}
@@ -154,6 +147,9 @@ export default function ChatPage() {
           isLoading={isLoading}
         />
       </div>
+      
+      {/* Profile Overlay */}
+      <Outlet />
     </div>
   );
 }
