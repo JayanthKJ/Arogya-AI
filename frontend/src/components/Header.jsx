@@ -1,8 +1,9 @@
 import { APP_NAME } from "../constants";
 import { Menu, Heart, User, Phone } from "lucide-react";
+import { Link } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
 
-export default function Header({ onMenuClick, onLogout }) {
+export default function Header({ onMenuClick }) {
   return (
     <header className="flex items-center justify-between px-4 md:px-6 py-3.5 bg-surface border-b border-border flex-shrink-0 z-10 relative">
       
@@ -49,16 +50,6 @@ export default function Header({ onMenuClick, onLogout }) {
       {/* ── Right: actions ── */}
       <div className="flex items-center gap-2.5">
         
-        {/* Hindi toggle */}
-        <button
-          className="hidden sm:block border border-border rounded-lg px-4 py-2
-                     text-foreground font-semibold hover:bg-muted/10 transition-colors duration-200 shadow-sm"
-          style={{ fontSize: "14px" }}
-          aria-label="Switch language to Hindi"
-        >
-          हिंदी
-        </button>
-
         {/* Emergency */}
         <button
           className="border border-danger/20 bg-danger/10 rounded-lg px-3 sm:px-4 py-2 flex items-center gap-2
@@ -70,31 +61,19 @@ export default function Header({ onMenuClick, onLogout }) {
           <span className="hidden sm:inline">Emergency</span>
         </button>
 
-        {/* Logout */}
-        {onLogout && (
-          <button
-            onClick={onLogout}
-            className="border border-border rounded-lg px-3 sm:px-4 py-2
-                       text-foreground font-semibold hover:bg-muted/10 transition-colors duration-200 shadow-sm"
-            style={{ fontSize: "14px" }}
-            aria-label="Logout"
-          >
-            Logout
-          </button>
-        )}
-
         {/* Theme Toggle */}
         <ThemeToggle />
 
-        {/* Placeholder Profile Button */}
-        <button
+        {/* Profile Button */}
+        <Link
+          to="profile"
           className="border border-border rounded-lg p-2
-                     text-muted hover:text-foreground hover:bg-muted/10 transition-all duration-200 shadow-sm ml-1"
+                     text-muted hover:text-foreground hover:bg-muted/10 transition-all duration-200 shadow-sm ml-1 flex items-center justify-center"
           aria-label="Profile"
-          title="Profile (Coming Soon)"
+          title="Profile"
         >
           <User size={20} />
-        </button>
+        </Link>
       </div>
     </header>
   );

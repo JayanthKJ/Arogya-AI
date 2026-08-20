@@ -5,6 +5,10 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import ChatPage from "./pages/ChatPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
+import ProfilePage from "./pages/ProfilePage";
+import ProfileOverview from "./components/profile/ProfileOverview";
+import PersonalInformation from "./components/profile/PersonalInformation";
+import Preferences from "./components/profile/Preferences";
 import { useAppearance } from "./hooks/useAppearance";
 
 function App() {
@@ -21,8 +25,21 @@ function App() {
         
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/chat/:sessionId" element={<ChatPage />} />
+          <Route path="/chat" element={<ChatPage />}>
+            <Route path="profile" element={<ProfilePage />}>
+              <Route index element={<ProfileOverview />} />
+              <Route path="personal-info" element={<PersonalInformation />} />
+              <Route path="preferences" element={<Preferences />} />
+            </Route>
+          </Route>
+          
+          <Route path="/chat/:sessionId" element={<ChatPage />}>
+            <Route path="profile" element={<ProfilePage />}>
+              <Route index element={<ProfileOverview />} />
+              <Route path="personal-info" element={<PersonalInformation />} />
+              <Route path="preferences" element={<Preferences />} />
+            </Route>
+          </Route>
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />
