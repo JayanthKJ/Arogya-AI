@@ -4,9 +4,12 @@
  * Currently returns mock responses for local development.
  */
 
-const ENV_API_URL = import.meta.env.VITE_API_URL;
-const BASE_URL = ENV_API_URL || "http://localhost:8000";
-const USE_MOCK = !ENV_API_URL;
+const BASE_URL = import.meta.env.VITE_API_URL;
+const USE_MOCK = !BASE_URL;
+
+if (USE_MOCK) {
+  console.warn("Running in mock mode. Set VITE_API_URL to your backend URL.");
+}
 
 // ------------------------------------------------------------------
 // Mock responses (used when VITE_API_URL is not set)
@@ -178,7 +181,7 @@ export const chatAPI = {
     const response = await fetch(`${BASE_URL}/chat/sessions`, {
       method: "GET",
       headers: {
-      ...getAuthHeader(),
+        ...getAuthHeader(),
       },
     });
 
@@ -195,4 +198,68 @@ export const chatAPI = {
 
     return response.json();
   },
+};
+
+export const profileAPI = {
+  async getProfile() {
+    if (USE_MOCK) {
+      await delay(500);
+      return {
+        email: "mock@example.com",
+        name: null,
+        date_of_birth: null,
+        language: "en"
+      };
+    }
+
+    const response = await fetch(`${BASE_URL}/profile`, {
+      method: "GET",
+      headers: {
+        ...getAuthHeader(),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        authAPI.logout();
+        window.location.reload();
+        throw new Error("Session expired. Please login again.");
+      }
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to fetch profile");
+    }
+
+    return response.json();
+  },
+
+  async updateProfile(data) {
+    if (USE_MOCK) {
+      await delay(500);
+      return {
+        email: "mock@example.com",
+        ...data,
+      };
+    }
+
+    const response = await fetch(`${BASE_URL}/profile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        authAPI.logout();
+        window.location.reload();
+        throw new Error("Session expired. Please login again.");
+      }
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to update profile");
+    }
+
+    return response.json();
+  }
 };

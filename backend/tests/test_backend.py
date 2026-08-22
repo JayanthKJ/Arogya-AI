@@ -165,8 +165,27 @@ class TestSafetyFilter:
 # Chat Route (integration)
 # ═══════════════════════════════════════════════════════════════════
 
+from auth.dependencies import get_current_user
+from models.db_models import User
+import uuid
+from datetime import datetime, timezone
+
 class TestChatRoute:
     client = TestClient(app)
+    
+    @classmethod
+    def setup_class(cls):
+        cls.mock_user = User(
+            id=str(uuid.uuid4()),
+            email="chat-test@example.com",
+            password_hash="fakehash",
+            created_at=datetime.now(timezone.utc)
+        )
+        app.dependency_overrides[get_current_user] = lambda: cls.mock_user
+
+    @classmethod
+    def teardown_class(cls):
+        app.dependency_overrides.clear()
 
     def test_health_check(self):
         r = self.client.get("/health")

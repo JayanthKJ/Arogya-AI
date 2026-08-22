@@ -78,3 +78,19 @@ class UserSession(SQLModel, table=True):
     created_at: datetime = Field(default_factory = _now, nullable = False)
     expires_at: datetime = Field(nullable = False)
     revoked_at: Optional[datetime] = Field(nullable = True)
+
+# ---------------------------------------------------------------------------
+# UserProfile
+# ---------------------------------------------------------------------------
+
+from datetime import date
+
+class UserProfile(SQLModel, table=True):
+    __tablename__ = "user_profiles"
+
+    user_id: str = Field(foreign_key="users.id", primary_key=True, index=True, nullable=False)
+    name: Optional[str] = Field(default=None)
+    date_of_birth: Optional[date] = Field(default=None)
+    language: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=_now, nullable=False)
+    updated_at: datetime = Field(default_factory=_now, nullable=False)

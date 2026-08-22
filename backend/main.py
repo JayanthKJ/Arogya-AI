@@ -27,9 +27,10 @@ from fastapi.responses import JSONResponse
 
 from config.settings import get_settings
 from routes import chat_router
+from routes.auth import router as auth_router
+from routes.profile import router as profile_router
 
 from config.database import init_db
-from routes.auth import router as auth_router
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 # Configure before anything else so all subsequent loggers inherit the format.
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     # ── Routers ───────────────────────────────────────────────────
     app.include_router(chat_router, prefix="/chat")
     app.include_router(auth_router, prefix="/auth", tags=["auth"])  # auth system connectivity initialized
+    app.include_router(profile_router, prefix="/profile", tags=["profile"])
 
     # ── Root health check ──────────────────────────────────────────
     @app.get("/", tags=["Health"], summary="Root health check")

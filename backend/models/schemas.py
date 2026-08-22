@@ -151,3 +151,38 @@ class ErrorResponse(BaseModel):
 
     detail: str
     code:   str = "INTERNAL_ERROR"
+
+# ── Profile ───────────────────────────────────────────────────────────────────
+
+from datetime import date
+
+class ProfileResponse(BaseModel):
+    """
+    Response returned by GET /profile and PATCH /profile.
+    Includes the existing user's email, and the profile-specific fields.
+    """
+    email: str = Field(description="The user's registered email address.")
+    name: Optional[str] = Field(default=None, description="The user's full name.")
+    date_of_birth: Optional[date] = Field(default=None, description="The user's date of birth.")
+    language: Optional[str] = Field(default=None, description="The user's preferred language.")
+
+
+class ProfileUpdateRequest(BaseModel):
+    """
+    Request body for PATCH /profile.
+    All fields are optional to allow partial updates.
+    """
+    name: Optional[str] = Field(default=None, description="The user's full name.")
+    date_of_birth: Optional[date] = Field(default=None, description="The user's date of birth.")
+    language: Optional[str] = Field(default=None, description="The user's preferred language.")
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("Name must not be empty or only whitespace.")
+            return stripped
+        return v
+
